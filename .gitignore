@@ -102,3 +102,7 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+_idk.py
+data/raw/
+note.md

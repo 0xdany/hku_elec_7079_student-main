@@ -60,7 +60,10 @@ def calculate_correlation_matrix(
     #
     # Expected output: DataFrame with stock codes as rows and columns, values as correlation coefficients
     
-    raise NotImplementedError("Please implement correlation matrix calculation logic")
+    if daily_returns.empty:
+        return pd.DataFrame(index=daily_returns.columns, columns=daily_returns.columns, dtype=float)
+    corr = daily_returns.corr(method=method)
+    return corr
 
 
 def calculate_rolling_correlation(
@@ -103,16 +106,25 @@ def calculate_rolling_correlation(
     # 1. Align two return series:
     #    - Create DataFrame with two columns
     #    - Use dropna() to remove missing values
+    if min_periods is None:
+        min_periods = window
+    df = pd.concat([stock1_returns, stock2_returns], axis=1).dropna()
+    if df.empty:
+        return pd.Series(index=stock1_returns.index, dtype=float)
+
     # 2. Calculate rolling correlation:
     #    - Use stock1.rolling(window).corr(stock2)
     #    - Set appropriate min_periods parameter
     # 3. Handle parameters:
     #    - If min_periods is None, set to window
+    rolling_corr = df.iloc[:, 0].rolling(window=window, min_periods=min_periods).corr(df.iloc[:, 1])
+    rolling_corr = rolling_corr.reindex(stock1_returns.index)
+
     # 4. Return time series
     #
     # Expected output: Series with time index and rolling correlation coefficients as values
     
-    raise NotImplementedError("Please implement rolling correlation calculation logic")
+    return rolling_corr
 
 
 def plot_correlation_heatmap(
@@ -150,6 +162,11 @@ def plot_correlation_heatmap(
     # 1. Create figure: plt.figure(figsize=figsize)
     # 2. Optional: create upper-triangular mask to avoid duplicate display
     #    - mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
+    plt.figure(figsize=figsize)
+    mask = None
+    if correlation_matrix.shape[0] > 1:
+        mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
+
     # 3. Plot heatmap with seaborn:
     #    - sns.heatmap(correlation_matrix, mask=mask, cmap=cmap, ...)
     #    - set center=0 for neutral zero
@@ -161,7 +178,13 @@ def plot_correlation_heatmap(
     #
     # No return value; show heatmap directly
     
-    raise NotImplementedError("Please implement correlation heatmap plotting logic")
+    sns.heatmap(correlation_matrix, mask=mask, cmap=cmap, center=0, square=True, cbar_kws={"shrink": 0.8}, annot=False)
+    plt.title(title)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
 
 
 def plot_rolling_correlation_analysis(
@@ -195,22 +218,65 @@ def plot_rolling_correlation_analysis(
     # 
     # Implementation hints:
     # 1. Validate stock pairs exist in data
+    all_symbols = set(daily_returns.columns)
+    for a, b in stock_pairs:
+        if a not in all_symbols or b not in all_symbols:
+            raise ValueError("Invalid stock pair provided")
+
     # 2. Compute rolling correlation for each pair:
     #    - Use implemented calculate_rolling_correlation()
+    n = len(stock_pairs)
+    n_cols = 2
+    n_rows = int(np.ceil(n / n_cols))
+
     # 3. Create subplot layout:
     #    - Determine n_rows, n_cols
     #    - Use plt.subplots() to create subplots
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, constrained_layout=True)
+
     # 4. Plot each pair's rolling correlation:
     #    - ax.plot() time series
     #    - Add zero line and mean line as references
     #    - Set y-limits to (-1.1, 1.1)
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = np.array([axes])
+    results: Dict[Tuple[str, str], pd.Series] = {}
+    for idx, pair in enumerate(stock_pairs):
+        r = idx // n_cols
+        c = idx % n_cols
+        ax = axes[r, c]
+        s1 = daily_returns[pair[0]]
+        s2 = daily_returns[pair[1]]
+        rc = calculate_rolling_correlation(s1, s2, window=window)
+        results[pair] = rc
+        ax.plot(rc.index, rc.values, label=f"{pair[0]} vs {pair[1]}")
+        ax.axhline(0.0, color='black', linewidth=1, linestyle='--')
+        if rc.dropna().size > 0:
+            ax.axhline(rc.dropna().mean(), color='orange', linewidth=1, linestyle=':')
+            
     # 5. Add titles, labels, legend, grid
+        ax.set_ylim(-1.1, 1.1)
+        ax.set_title(f"Rolling Corr ({window}): {pair[0]} vs {pair[1]}")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    total_axes = n_rows * n_cols
+
     # 6. Hide extra subplots
+    for j in range(n, total_axes):
+        r = j // n_cols
+        c = j % n_cols
+        fig.delaxes(axes[r, c])
+
     # 7. Save and show figure
     #
     # Expected output: Dict[Tuple[pair], Series[rolling_correlation]]
     
-    raise NotImplementedError("Please implement rolling correlation analysis plotting logic")
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
+    return results
 
 
 def analyze_correlation_structure(
@@ -241,8 +307,34 @@ def analyze_correlation_structure(
     # 1. Extract off-diagonal correlation values:
     #    - Use np.eye() to create diagonal mask
     #    - Extract off-diagonal elements
+    if correlation_matrix.empty:
+        return {
+            'avg_correlation': np.nan,
+            'median_correlation': np.nan,
+            'std_correlation': np.nan,
+            'min_correlation': np.nan,
+            'max_correlation': np.nan,
+            'n_stocks': 0,
+            'high_corr_pairs': [],
+            'n_high_corr_pairs': 0,
+            'pct_high_corr': 0.0,
+            'pct_positive_corr': 0.0,
+            'pct_negative_corr': 0.0,
+            'q25': np.nan,
+            'q75': np.nan
+        }
+    n = correlation_matrix.shape[0]
+    mask = ~np.eye(n, dtype=bool)
+
     # 2. Compute basic statistics:
     #    - mean, median, std, min, max
+    vals = correlation_matrix.values[mask]
+    avg_corr = float(np.nanmean(vals)) if vals.size else np.nan
+    med_corr = float(np.nanmedian(vals)) if vals.size else np.nan
+    std_corr = float(np.nanstd(vals)) if vals.size else np.nan
+    min_corr = float(np.nanmin(vals)) if vals.size else np.nan
+    max_corr = float(np.nanmax(vals)) if vals.size else np.nan
+    
     # 3. Identify high-correlation pairs:
     #    - Iterate upper triangle
     #    - Find pairs with abs(corr) >= threshold
@@ -250,11 +342,45 @@ def analyze_correlation_structure(
     #    - Positive vs negative proportions
     #    - Count and ratio of high-corr pairs
     # 5. Quantiles
+    q25 = float(np.nanpercentile(vals, 25)) if vals.size else np.nan
+    q75 = float(np.nanpercentile(vals, 75)) if vals.size else np.nan
+    pos_pct = float((np.sum(vals > 0) / vals.size) * 100) if vals.size else 0.0
+    neg_pct = 100.0 - pos_pct if vals.size else 0.0
+    high_pairs = []
+    stocks = list(correlation_matrix.index)
+    count_high = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            corr_ij = correlation_matrix.iloc[i, j]
+            if abs(corr_ij) >= threshold:
+                count_high += 1
+                high_pairs.append({
+                    'stock1': stocks[i],
+                    'stock2': stocks[j],
+                    'correlation': float(corr_ij)
+                })
+    total_pairs = n * (n - 1) / 2
+    pct_high = float((count_high / total_pairs) * 100) if total_pairs > 0 else 0.0
+
     # 6. Return result dictionary
     #
     # Expected output: Dict with correlation structure metrics
     
-    raise NotImplementedError("Please implement correlation structure analysis logic")
+    return {
+        'avg_correlation': avg_corr,
+        'median_correlation': med_corr,
+        'std_correlation': std_corr,
+        'min_correlation': min_corr,
+        'max_correlation': max_corr,
+        'n_stocks': int(n),
+        'high_corr_pairs': high_pairs,
+        'n_high_corr_pairs': int(count_high),
+        'pct_high_corr': pct_high,
+        'pct_positive_corr': pos_pct,
+        'pct_negative_corr': neg_pct,
+        'q25': q25,
+        'q75': q75
+    }
 
 
 def plot_correlation_distribution(
@@ -275,21 +401,57 @@ def plot_correlation_distribution(
     # Implementation hints:
     # 1. Extract off-diagonal correlation values:
     #    - Use diagonal mask to drop diagonal entries
+    n = correlation_matrix.shape[0]
+    if n <= 1:
+        plt.figure(figsize=figsize)
+        plt.show()
+        return
+    mask = ~np.eye(n, dtype=bool)
+    vals = correlation_matrix.values[mask]
+
     # 2. Create 1x2 subplot layout:
     #    - Left: histogram of correlation distribution
     #    - Right: boxplot summary
+    fig, axes = plt.subplots(1, 2, figsize=figsize, constrained_layout=True)
+    ax_hist = axes[0]
+    ax_box = axes[1]
+    
     # 3. Plot histogram:
     #    - plt.hist()
     #    - Add mean/median reference lines
     #    - Add legend and labels
+    ax_hist.hist(vals, bins=30, alpha=0.7, edgecolor='k')
+    mean_v = float(np.nanmean(vals)) if vals.size else np.nan
+    median_v = float(np.nanmedian(vals)) if vals.size else np.nan
+    ax_hist.axvline(mean_v, color='red', linestyle='--', label='Mean')
+    ax_hist.axvline(median_v, color='green', linestyle=':', label='Median')
+    ax_hist.set_title('Correlation Distribution')
+    ax_hist.legend()
+
     # 4. Plot boxplot:
     #    - plt.boxplot()
+    ax_box.boxplot(vals, vert=True)
+    ax_box.set_title('Summary')
+
     # 5. Add stats textbox: count, mean, std, min, max
+    stats_text = (
+        f"Count: {vals.size}\n"
+        f"Mean: {mean_v:.4f}\n"
+        f"Std: {float(np.nanstd(vals)):.4f}\n"
+        f"Min: {float(np.nanmin(vals)):.4f}\n"
+        f"Max: {float(np.nanmax(vals)):.4f}"
+    )
+    ax_hist.text(0.95, 0.95, stats_text, transform=ax_hist.transAxes, fontsize=10,
+                 verticalalignment='top', horizontalalignment='right',
+                 bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.7))
+                 
     # 6. Save and show
     #
     # No return value; show the distribution plots
     
-    raise NotImplementedError("Please implement correlation distribution plotting logic")
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
 
 
 # Example usage and testing functions

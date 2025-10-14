@@ -56,17 +56,33 @@ def calculate_forward_returns(
     #
     # Implementation hints:
     # 1. Check if input data has MultiIndex format
+    if not isinstance(data.columns, pd.MultiIndex):
+        raise ValueError("Input data must have MultiIndex columns")
+
     # 2. Extract all stock symbols: data.columns.get_level_values(0).unique()
+    stock_symbols: List[str] = data.columns.get_level_values(0).unique()
+
     # 3. For each stock:
     #    - Get current prices: data[(stock, price_column)]
     #    - Get future prices: current_prices.shift(-forward_periods)
     #    - Calculate forward returns: (future_price / current_price) - 1
     # 4. Combine all stock returns into DataFrame
+    forward_returns: pd.DataFrame = pd.DataFrame()
+    for stock in stock_symbols:
+        try:
+            current_prices: pd.Series = data[(stock, price_column)]
+            future_prices: pd.Series = current_prices.shift(-forward_periods) # negative means later time
+            forward_returns[stock] = (future_prices / current_prices) - 1
+
     # 5. Handle KeyError and missing value situations
-    #
+            forward_returns.iloc[-forward_periods:] = np.nan # hadnle last row
+        except KeyError:
+            raise ValueError(f"{price_column} not found for {stock}")
+
     # Expected output: DataFrame with time as rows, stock symbols as columns, forward returns as values
+    return forward_returns
+
     
-    raise NotImplementedError("Please implement forward returns calculation logic")
 
 
 def calculate_weekly_returns(daily_data: pd.DataFrame, price_column: str = 'close_px') -> pd.DataFrame:
@@ -101,18 +117,35 @@ def calculate_weekly_returns(daily_data: pd.DataFrame, price_column: str = 'clos
     #
     # Implementation hints:
     # 1. Check if input data has MultiIndex format
+    if not isinstance(daily_data.columns, pd.MultiIndex):
+        raise ValueError("Input data must have MultiIndex columns")
+
     # 2. Extract all stock symbols
+    stock_symbols: List[str] = daily_data.columns.get_level_values(0).unique()
+
     # 3. For each stock:
     #    - Get daily price data: daily_data[(stock, price_column)]
     #    - Resample to weekly frequency using resample('W')
     #    - Get last trading day price of each week: .last()
     #    - Calculate weekly returns: .pct_change()
-    # 4. Handle missing data and exceptional situations
     # 5. Combine results into DataFrame
+    # 4. Handle missing data and exceptional situations
+    weekly_returns: pd.DataFrame = pd.DataFrame()
+
+    for stock in stock_symbols:
+        try:
+            weekly_price = daily_data[(stock, price_column)].ffill().resample('W')
+            weekly_price_closing = weekly_price.last()
+            weekly_price_opening = weekly_price.first()
+            weekly_returns[stock] = (weekly_price_closing / weekly_price_opening) - 1
+
+        except KeyError:
+            raise ValueError(f"{price_column} not found for {stock}")
     #
     # Expected output: DataFrame with week end dates as rows, stock symbols as columns, weekly returns as values
+    return weekly_returns
     
-    raise NotImplementedError("Please implement weekly returns calculation logic")
+
 
 
 def plot_return_distribution(
@@ -159,24 +192,90 @@ def plot_return_distribution(
     #
     # Implementation hints:
     # 1. Verify sample stocks exist in the data
+    if missing_stocks := set(sample_stocks) - set(returns_data.columns):
+        raise ValueError(f"The following sample stocks were not found in the data: {', '.join(missing_stocks)}")
+
     # 2. Create 2×n_stocks subplot layout:
     #    - First row: histogram + normal distribution overlay
     #    - Second row: Q-Q plots
+    n_stocks = len(sample_stocks)
+    fig, axes = plt.subplots(nrows=2, ncols=n_stocks, figsize=figsize, constrained_layout=True)
+
     # 3. Calculate statistics for each stock:
     #    - Basic statistics: mean(), std()
     #    - Distribution characteristics: skew(), kurtosis()
     #    - Normality test: stats.jarque_bera()
-    # 4. Create visualizations:
-    #    - plt.hist() for histogram
-    #    - stats.norm.pdf() for normal distribution overlay
-    #    - stats.probplot() for Q-Q plots
-    # 5. Add chart labels, legends, statistical info text boxes
-    # 6. Save plots (if path specified)
-    #
-    # Expected output: Dict[stock_symbol, Dict[statistic_name, value]]
-    
-    raise NotImplementedError("Please implement return distribution analysis and visualization logic")
+    stats_dict = {}
+    for i, stock in enumerate(sample_stocks):
+        returns = returns_data[stock].dropna() # Drop NaN values for accurate stats
+        
+        if returns.empty:
+            raise ValueError(f"No valid return data found for stock '{stock}'")
 
+        mean_return = returns.mean()
+        std_return = returns.std()
+        skewness = returns.skew()
+        kurtosis = returns.kurtosis()
+        count = int(returns.count())
+        _, jarque_bera_pvalue = stats.jarque_bera(returns)
+        
+        stats_dict[stock] = {
+            'mean': mean_return,
+            'std': std_return,
+            'skewness': skewness,
+            'kurtosis': kurtosis,
+            'jarque_bera_pvalue': jarque_bera_pvalue,
+            'count': count
+        }
+        
+        # 4. Create visualizations:
+        #    - plt.hist() for histogram
+        #    - stats.norm.pdf() for normal distribution overlay
+        #    - stats.probplot() for Q-Q plots
+        ax_hist = axes[0, i] if n_stocks > 1 else axes[0]
+        
+        n, bins, _ = ax_hist.hist(returns, bins=50, density=True, alpha=0.6, label='Returns')
+ 
+        xmin, xmax = ax_hist.get_xlim() 
+        x = np.linspace(xmin, xmax, 100)
+        p = stats.norm.pdf(x, mean_return, std_return) # normal distribution overlay
+        ax_hist.plot(x, p, 'k', linewidth=2, label='Normal Distribution')
+           
+        ax_qq = axes[1, i] if n_stocks > 1 else axes[1]
+        stats.probplot(returns, dist="norm", plot=ax_qq)  #  for Q-Q plots
+
+        # 5. Add chart labels, legends, statistical info text boxes
+        ax_hist.set_title(f'Return Distribution: {stock}')
+        ax_hist.set_xlabel('Return')
+        ax_hist.set_ylabel('Frequency')
+        ax_hist.legend()
+
+        stats_text = (
+            f"Mean: {mean_return:.4f}\n"
+            f"Std: {std_return:.4f}\n"
+            f"Skew: {skewness:.4f}\n"
+            f"Kurt: {kurtosis:.4f}\n"
+            f"JB p-value: {jarque_bera_pvalue:.4f}"
+        )
+        ax_hist.text(0.95, 0.95, stats_text, transform=ax_hist.transAxes, fontsize=10,
+                     verticalalignment='top', horizontalalignment='right',
+                     bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.7))
+
+        ax_qq.set_title(f'Q-Q Plot: {stock}')
+    # Add a main title for the figure
+    fig.suptitle('Return Distribution Analysis', fontsize=16) # add a main title for the figure
+    
+    # 6. Save plots (if path specified)
+    if save_path:
+        plt.savefig(save_path)
+        print(f"Plot saved to {save_path}")
+        
+    plt.show()
+
+    # Expected output: Dict[stock_symbol, Dict[statistic_name, value]]
+    return stats_dict
+    
+    
 
 def analyze_return_properties(returns_data: pd.DataFrame) -> pd.DataFrame:
     """
@@ -210,8 +309,55 @@ def analyze_return_properties(returns_data: pd.DataFrame) -> pd.DataFrame:
     # 4. Handle edge cases with empty data
     #
     # Expected output: DataFrame with stocks as rows, statistical indicators as columns
+
+   # Handle empty DataFrame on edge case
+    if returns_data.empty:
+        # Define the expected columns for an empty result
+        expected_columns = [
+            'count', 'mean', 'std', 'min', 'max', 'skewness', 'kurtosis',
+            'q25', 'q50', 'q75', 'jarque_bera_pvalue', 'is_normal'
+        ]
+        return pd.DataFrame(columns=expected_columns)
     
-    raise NotImplementedError("Please implement return properties analysis logic")
+    # 1. Calculate statistics for each stock's return series:
+    #    - Basic statistics: count, mean, std, min, max
+    #    - Quantiles: q25, q50 (median), q75
+    # transpose the data so that it will match the dataframe format
+    summary_df = returns_data.describe(percentiles=[0.25, 0.5, 0.75]).transpose()
+    # Rename the percentile columns to match the test requirements
+    summary_df = summary_df.rename(columns={'25%': 'q25', '50%': 'q50', '75%': 'q75'})
+    #    - Distribution shape: skewness, kurtosis
+    summary_df['skewness'] = returns_data.skew()
+    summary_df['kurtosis'] = returns_data.kurtosis()
+    # 2. Perform normality test (when sample size >= 8):
+    # define a helper function for a jarque bera for better readability
+    def apply_jarque_bera(series):
+        """Helper function to apply Jarque-Bera test."""
+        # Check if the series has at least 8 non-NaN values
+        if series.count() < 8:
+            return pd.Series({'jarque_bera_pvalue': np.nan, 'is_normal': np.nan})
+        
+        # Drop NaNs before applying the test
+        non_nan_series = series.dropna()
+        
+        #    - Use stats.jarque_bera()
+        _, p_value = stats.jarque_bera(non_nan_series)
+        
+        #    - Determine normality based on p-value (>0.05 for normal)
+        is_normal = p_value > 0.05
+        
+        return pd.Series({'jarque_bera_pvalue': p_value, 'is_normal': is_normal})
+    # Apply the function to each column and join the results
+    jb_results = returns_data.apply(apply_jarque_bera)
+    summary_df = summary_df.join(jb_results.transpose())
+    # 3. Organize results into DataFrame with stock symbols as index
+    # The .transpose() on the describe() result already sets the stock symbols as the index.
+    # The .join() operation correctly adds the new columns.
+    # 4. Handle edge cases with empty data
+    # The use of .describe() and .dropna() inside the apply_jarque_bera function
+    # handles empty data by producing NaNs where necessary.
+    
+    return summary_df
 
 
 # Example usage and testing functions

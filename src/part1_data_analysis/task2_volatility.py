@@ -61,7 +61,10 @@ def calculate_rolling_volatility(
     #
     # Expected output: DataFrame with same structure as input, values are rolling volatilities
     
-    raise NotImplementedError("Please implement rolling volatility calculation logic")
+    vol = daily_returns.rolling(window=window).std()
+    if annualize:
+        vol = vol * np.sqrt(252)
+    return vol
 
 
 def build_equal_weight_index(
@@ -101,13 +104,23 @@ def build_equal_weight_index(
     # Implementation hints:
     # 1. Calculate equal-weight returns (simple average of all stocks):
     #    - Use stock_returns.mean(axis=1, skipna=True)
+    if stock_returns.empty:
+        return pd.Series(index=stock_returns.index, dtype=float)
+    index_returns = stock_returns.mean(axis=1, skipna=True)
+
     # 2. axis=1 means calculate across rows (average across stocks)
+    if stock_returns.shape[1] == 1:
+        index_returns.name = stock_returns.columns[0]
+
     # 3. skipna=True automatically handles missing values, only calculates average for valid data
+    else:
+        index_returns.name = None
+
     # 4. Returns a time series (pd.Series)
     #
     # Expected output: Series with time index and equal-weight index returns as values
     
-    raise NotImplementedError("Please implement equal-weight index construction logic")
+    return index_returns
 
 
 def plot_volatility_analysis(
@@ -144,21 +157,61 @@ def plot_volatility_analysis(
     # 1. Validate sample stocks and calculate volatility:
     #    - Use the implemented calculate_rolling_volatility() function
     #    - Calculate 20-day rolling volatility for both individual stocks and index
+    missing = set(sample_stocks) - set(daily_returns.columns)
+    if missing:
+        raise ValueError(f"Missing stocks: {', '.join(sorted(missing))}")
+    selected = daily_returns[sample_stocks]
+    rolling_vol = calculate_rolling_volatility(selected, window=20, annualize=False)
+    index_rolling_vol = equal_weight_index.rolling(window=20).std()
+
     # 2. Create 2×2 subplot layout:
     #    - Top-left: Volatility time series line plot
     #    - Top-right: Volatility distribution box plot
     #    - Bottom-left: Risk-return scatter plot
     #    - Bottom-right: Volatility clustering analysis (squared returns)
+    ann_ret = selected.mean() * 252
+    ann_vol = selected.std() * np.sqrt(252)
+    squared_roll = selected.pow(2).rolling(window=20).mean()
+    fig, axes = plt.subplots(2, 2, figsize=figsize, constrained_layout=True)
+    ax_ts = axes[0, 0]
+    
     # 3. Draw each subplot:
     #    - ax.plot() for time series
     #    - ax.boxplot() for distribution
     #    - ax.scatter() for scatter plot
     # 4. Add legends, labels, grids, etc.
+    for col in rolling_vol.columns:
+        ax_ts.plot(rolling_vol.index, rolling_vol[col], label=col)
+    ax_ts.plot(index_rolling_vol.index, index_rolling_vol, label='INDEX')
+    ax_ts.set_title('20-day Rolling Volatility')
+    ax_ts.legend()
+    ax_box = axes[0, 1]
+    data_for_box = [rolling_vol[col].dropna().values for col in rolling_vol.columns]
+
+    if len(data_for_box) > 0 and all(len(x) > 0 for x in data_for_box):
+        ax_box.boxplot(data_for_box, labels=rolling_vol.columns)
+    ax_box.set_title('Volatility Distribution')
+    ax_scatter = axes[1, 0]
+    ax_scatter.scatter(ann_vol.values, ann_ret.values)
+
+    for i, name in enumerate(ann_ret.index):
+        ax_scatter.annotate(name, (ann_vol.values[i], ann_ret.values[i]))
+    ax_scatter.set_xlabel('Annualized Volatility')
+    ax_scatter.set_ylabel('Annualized Return')
+    ax_scatter.set_title('Risk-Return')
+
+    ax_sq = axes[1, 1]
+    for col in squared_roll.columns:
+        ax_sq.plot(squared_roll.index, squared_roll[col], label=col)
+    ax_sq.set_title('Rolling Mean of Squared Returns')
+
     # 5. Save the plot (if path is specified)
     #
     # No return value, directly display the chart
     
-    raise NotImplementedError("Please implement comprehensive volatility analysis visualization logic")
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
 
 
 def calculate_volatility_statistics(
@@ -187,19 +240,45 @@ def calculate_volatility_statistics(
     # 1. Compute rolling volatility for stocks and index:
     #    - Use calculate_rolling_volatility()
     #    - Convert equal_weight_index to DataFrame when needed
+    stock_vol = calculate_rolling_volatility(daily_returns, window=window, annualize=True)
+    stock_vol_means = stock_vol.mean(skipna=True)
+    index_vol_series = equal_weight_index.rolling(window=window).std() * np.sqrt(252)
+
     # 2. Stock volatility statistics:
     #    - Average volatility: stock_vol_means.mean()
     #    - Median, min, max
     #    - Volatility of volatilities: stock_vol_means.std()
+    avg_stock_volatility = float(stock_vol_means.mean()) if len(stock_vol_means) else float('nan')
+    median_stock_volatility = float(stock_vol_means.median()) if len(stock_vol_means) else float('nan')
+    min_stock_volatility = float(stock_vol_means.min()) if len(stock_vol_means) else float('nan')
+    max_stock_volatility = float(stock_vol_means.max()) if len(stock_vol_means) else float('nan')
+    vol_of_volatilities = float(stock_vol_means.std()) if len(stock_vol_means) else float('nan')
+    
     # 3. Index volatility statistics
+    index_volatility = float(index_vol_series.mean()) if len(index_vol_series) else float('nan')
+    index_vol_std = float(index_vol_series.std()) if len(index_vol_series) else float('nan')
+    
     # 4. Diversification benefit:
     #    - diversification_ratio = avg_stock_volatility / index_volatility
     # 5. Correlation between stock and market volatilities
+    diversification_ratio = float(avg_stock_volatility / index_volatility) if index_volatility and not np.isnan(index_volatility) and index_volatility != 0 else float('nan')
+    n_stocks_analyzed = int(len(daily_returns.columns))
+    
     # 6. Return statistics dict
     #
     # Expected output: Dict of volatility statistics
     
-    raise NotImplementedError("Please implement volatility statistics calculation logic")
+    return {
+        'avg_stock_volatility': avg_stock_volatility,
+        'median_stock_volatility': median_stock_volatility,
+        'min_stock_volatility': min_stock_volatility,
+        'max_stock_volatility': max_stock_volatility,
+        'vol_of_volatilities': vol_of_volatilities,
+        'index_volatility': index_volatility,
+        'index_vol_std': index_vol_std,
+        'diversification_ratio': diversification_ratio,
+        'n_stocks_analyzed': n_stocks_analyzed
+    }
 
 
 def compare_individual_vs_market(
@@ -226,6 +305,13 @@ def compare_individual_vs_market(
     # 1. For each stock vs market index:
     #    - Align data: reindex() to ensure time alignment
     #    - Filter insufficient data (<50 observations)
+    results: Dict[str, Dict[str, Any]] = {}
+    for stock in daily_returns.columns:
+        aligned = pd.concat([daily_returns[stock], equal_weight_index], axis=1, join='inner').dropna()
+        if aligned.shape[0] < 50:
+            continue
+        aligned.columns = ['stock', 'market']
+        
     # 2. Compute key metrics:
     #    - Annualized return and volatility (×252, ×√252)
     #    - Beta: covariance / market variance
@@ -239,7 +325,30 @@ def compare_individual_vs_market(
     #
     # Expected output: DataFrame, rows=stocks, columns=metrics
     
-    raise NotImplementedError("Please implement individual vs market comparison logic")
+        stock_mean = aligned['stock'].mean()
+        market_mean = aligned['market'].mean()
+        market_var = aligned['market'].var()
+        beta = float(aligned['stock'].cov(aligned['market']) / market_var) if market_var != 0 else np.nan
+        alpha_daily = stock_mean - (beta * market_mean if not np.isnan(beta) else 0.0)
+        ann_return = float(stock_mean * 252)
+        ann_vol = float(aligned['stock'].std() * np.sqrt(252))
+        corr = float(aligned['stock'].corr(aligned['market']))
+        residual = aligned['stock'] - (beta * aligned['market'] if not np.isnan(beta) else 0.0)
+        tracking_error = float(residual.std() * np.sqrt(252))
+        sharpe_ratio = float(ann_return / ann_vol) if ann_vol != 0 else np.nan
+        information_ratio = float((alpha_daily * 252) / tracking_error) if tracking_error != 0 else np.nan
+        results[stock] = {
+            'annualized_return': ann_return,
+            'annualized_volatility': ann_vol,
+            'beta': beta,
+            'alpha': float(alpha_daily * 252),
+            'correlation': corr,
+            'sharpe_ratio': sharpe_ratio,
+            'information_ratio': information_ratio,
+            'tracking_error': tracking_error,
+            'observations': int(aligned.shape[0])
+        }
+    return pd.DataFrame.from_dict(results, orient='index')
 
 
 # Example usage and testing functions
