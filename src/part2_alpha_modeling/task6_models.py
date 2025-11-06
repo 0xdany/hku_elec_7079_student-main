@@ -101,9 +101,26 @@ class LinearRankingModel:
         # 6. Return self to support chaining
         #
         # Expected output: Trained LinearRankingModel instance
+
+        if X.empty or y.empty:
+            raise ValueError("X or y is empty.")
+
+        self.feature_names = X.columns.tolist()
+
+        X_clean = X.fillna(X.median())
+        y_clean = y.fillna(y.median())
+
+        common_index = X_clean.index.intersection(y_clean.index)
+
+        X_clean = X_clean.loc[common_index]
+        y_clean = y_clean.loc[common_index]
+
+        X_scaled = self.scaler.fit_transform(X_clean)
+
+        self.model.fit(X_scaled, y_clean)
+        self.is_fitted = True
         
-        raise NotImplementedError("Please implement linear model training logic")
-    
+        return self
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
         Predict ranking scores.
@@ -129,9 +146,24 @@ class LinearRankingModel:
         # 6. Return prediction scores in numpy array format
         #
         # Expected output: numpy.ndarray containing predicted ranking scores for each sample
+
+        if not self.is_fitted:
+            raise ValueError("Model not trained")
+
+        if X.empty:
+            raise ValueError("X empty")
+
+        X_clean = X.fillna(X.median())
+
+        X_scaled = self.scaler.transform(X_clean)
+
+        y_pred = self.model.predict(X_scaled)
+
+        return y_pred
+
+
         
-        raise NotImplementedError("Please implement linear model prediction logic")
-    
+
     def get_feature_importance(self) -> pd.Series:
         """
         Get feature importance.
@@ -150,9 +182,22 @@ class LinearRankingModel:
         # 4. Return feature importance Series
         #
         # Expected output: pandas.Series with feature names as index and importance scores (absolute values) as values
+
+        if not self.is_fitted:
+            raise ValueError("Model not trained dumbass")
+
+        if self.feature_names is None:
+            raise ValueError("No feature names")
+
+        coefficients = self.model.coef_
+
+        importance_series = pd.Series(coefficients, index=self.feature_names)
+
+        importance_abs = importance_series.abs()
+
+        return importance_abs
         
-        raise NotImplementedError("Please implement feature importance calculation logic")
-    
+
     def save_model(self, filepath: str) -> None:
         """
         Save the model.
@@ -161,7 +206,7 @@ class LinearRankingModel:
             filepath (str): Save path
         """
         if not self.is_fitted:
-            raise ValueError("Model not yet trained")
+            raise ValueError("Model not trained")
         
         model_data = {
             'model': self.model,
@@ -291,9 +336,44 @@ class TreeRankingModel:
         # 4. Set self.is_fitted = True and return self
         #
         # Expected output: Trained TreeRankingModel instance
-        
-        raise NotImplementedError("Please implement tree model training logic")
-    
+
+        if X.empty or y.empty:
+            raise ValueError("Input data X or y is empty.")
+
+        self.feature_names = X.columns.tolist()
+
+        X_clean = X.fillna(X.median())
+        y_clean = y.fillna(y.median())
+
+        common_index = X_clean.index.intersection(y_clean.index)
+        X_clean = X_clean.loc[common_index]
+        y_clean = y_clean.loc[common_index]
+
+        if X_clean.empty or y_clean.empty:
+            raise ValueError("No common indices between X and y after cleaning.")
+
+        self.feature_names = X.columns.tolist()
+
+        model_type = self.model_type
+        if model_type == 'lightgbm':
+            train_data = lgb.Dataset(X_clean, label=y_clean)
+            self.model = lgb.train(
+                self.params,
+                train_data,
+                num_boost_round=100,
+                valid_sets=[train_data],
+                valid_names=['train'],
+                callbacks=[lgb.early_stopping(stopping_rounds=10, verbose=False)]
+            )
+
+        elif model_type == 'xgboost':
+            self.model = xgb.XGBRegressor(**self.params)
+            self.model.fit(X_clean, y_clean)
+
+        self.is_fitted = True
+        return self
+
+
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
         Predict ranking scores.
@@ -316,9 +396,22 @@ class TreeRankingModel:
         # 5. Return prediction results in numpy array format
         #
         # Expected output: numpy.ndarray containing predicted ranking scores for each sample
+
+        if not self.is_fitted:
+            raise ValueError("Model is not trained")
+
+        if X.empty:
+            return np.array([])
+
+        X_clean = X.fillna(X.median())
+
+
+
+        predictions = self.model.predict(X_clean)
+
+        return predictions
         
-        raise NotImplementedError("Please implement tree model prediction logic")
-    
+
     def get_feature_importance(self) -> pd.Series:
         """
         Get feature importance.
@@ -340,9 +433,23 @@ class TreeRankingModel:
         # 4. Return feature importance Series
         #
         # Expected output: pandas.Series with feature names as index and importance scores as values
-        
-        raise NotImplementedError("Please implement tree model feature importance calculation logic")
-    
+
+        if not self.is_fitted:
+            raise ValueError("Model not trained")
+
+        if self.feature_names is None:
+            raise ValueError("No feature names")
+
+        if self.model_type == 'lightgbm':
+            importance = self.model.feature_importance(importance_type='gain')
+        elif self.model_type == 'xgboost':
+            importance = self.model.feature_importances_
+
+
+        importance_series = pd.Series(importance, index=self.feature_names)
+
+        return importance_series
+
     def save_model(self, filepath: str) -> None:
         """
         Save the model.
@@ -433,8 +540,27 @@ def evaluate_model_performance(
     # 4. Return performance evaluation result dictionary
     #
     # Expected output: Dict[str, Any] containing various performance metrics
+
+    # 1. Input validation
+    if X.empty or y.empty:
+        raise ValueError("Input data X or y is empty.")
+
+    common_index = X.index.intersection(y.index)
+    X_clean = X.loc[common_index]
+    y_clean = y.loc[common_index]
+
+    if X_clean.empty or y_clean.empty:
+        raise ValueError("No common indices between X and y.")
+
+    if validation_method == 'walk_forward':
+        performance = walk_forward_validation(model, X_clean, y_clean, **kwargs)
+    elif validation_method == 'cross_validation':
+        performance = time_series_cv_validation(model, X_clean, y_clean, **kwargs)
+    else:
+        performance = simple_validation(model, X_clean, y_clean)
+
+    return performance
     
-    raise NotImplementedError("Please implement model performance evaluation logic")
 
 
 def walk_forward_validation(
