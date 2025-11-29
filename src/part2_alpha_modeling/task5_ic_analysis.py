@@ -12,6 +12,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List, Tuple, Union
 import warnings
+
+import scipy
 from scipy import stats
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -75,7 +77,46 @@ def calculate_information_coefficient(
     #    - Return NaN if calculation is not feasible
     #
     # Expected output: Dict containing IC value and statistical significance information
-    
+
+    if not isinstance(forward_returns, pd.Series) or not isinstance(factor_series, pd.Series):
+        raise ValueError("Input must be pandas.Series")
+
+    if forward_returns.empty or factor_series.empty:
+        raise ValueError("Input series is empty")
+
+    if method not in ['cross_sectional', 'time_series']:
+        raise ValueError(f"Unsupported IC calculation method: {method}")
+
+
+    common_index = factor_series.index.intersection(forward_returns.index)
+
+    factor_aligned = factor_series.loc[common_index]
+    returns_aligned = forward_returns.loc[common_index]
+
+    removed_missing_values = ~(factor_aligned.isnull() | returns_aligned.isnull())
+
+    clean_factors = factor_aligned[removed_missing_values]
+    clean_returns = returns_aligned[removed_missing_values]
+
+    if len(clean_factors) < 10:
+        raise ValueError("Insufficient valid data points")
+
+    n = len(clean_factors)
+
+    corr, p_value = scipy.stats.pearsonr(clean_factors, clean_returns)
+
+    t_stat = np.nan
+    if abs(corr) < 1.0 and n > 2:
+        t_stat = corr * np.sqrt((n - 2) / (1 - corr ** 2))
+    results = {
+        'ic_value': corr,
+        't_stat': t_stat,
+        'p_value': p_value,
+        'n_observations': n,
+        'method': method
+    }
+
+    return results
     raise NotImplementedError("Please implement single factor information coefficient calculation logic")
 
 
@@ -260,7 +301,7 @@ def analyze_ic_stability(
         - Analyze IC decay characteristics
     """
     if ic_series.empty:
-        raise ValueError("IC time series is empty")
+        raise ValueError("IC series is empty")
     
     if not isinstance(ic_series, pd.Series):
         raise ValueError("Input must be pandas.Series type")

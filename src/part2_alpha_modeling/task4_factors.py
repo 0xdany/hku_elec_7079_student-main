@@ -61,19 +61,43 @@ def calculate_momentum_factors(
     #
     # Implementation hints:
     # 1. Input validation: Check data type and whether it's empty
+    if price_series.empty:
+        raise ValueError("Input data cannot be empty")
+    if not isinstance(price_series, pd.Series):
+        raise ValueError("Price series must be pandas.Series")
+    if method not in ('pct_change','log_return'):
+        raise ValueError("Method is unsupported")
     # 2. Data preprocessing: Use ffill() for forward filling missing values
+    price_series = price_series.ffill()
     # 3. Calculate momentum factors for each time window period:
     #    - pct_change method: price_series.pct_change(periods=period) 
     #    - log_return method: np.log(price_series / price_series.shift(periods=period))
+    momentum_factors: pd.DataFrame = pd.DataFrame(index = price_series.index)
+    
+
+    for period in periods:
+        if method == 'pct_change':
+            factor = price_series.pct_change(periods=period) 
+        elif method == 'log_return': 
+            factor = np.log(price_series / price_series.shift(periods=period))
+        else:
+            raise ValueError("Unknown Method")
+        
+
     # 4. Data cleaning:
     #    - Fill missing values with 0.0
+        factor = factor.fillna(0.0)
     #    - Call handle_outliers_series() to handle outliers
+        factor = handle_outliers_series(factor)
     #    - Call standardize_series() for Z-score standardization
+        factor = standardize_series(factor)
     # 5. Organize results: Create DataFrame with column name format 'momentum_{period}'
     #
+        momentum_factors[f'momentum_{period}'] = factor
     # Expected output: DataFrame with time as rows, momentum factors for different periods as columns
-    
-    raise NotImplementedError("Please implement momentum factor calculation logic")
+    return momentum_factors
+
+    #raise NotImplementedError("Please implement momentum factor calculation logic")
 
 
 def calculate_mean_reversion_factors(
@@ -82,7 +106,7 @@ def calculate_mean_reversion_factors(
 ) -> pd.DataFrame:
     """
     Calculate mean reversion factors for a single stock.
-    
+
     Calculates the deviation of stock price from its moving average to capture mean reversion opportunities.
     
     Args:
@@ -106,17 +130,29 @@ def calculate_mean_reversion_factors(
     #
     # Implementation hints:
     # 1. Input validation and preprocessing (refer to momentum factor implementation)
+    if price_series.empty:
+        raise ValueError("Input data cannot be empty")
+    if not isinstance(price_series, pd.Series):
+        raise ValueError("Price series must be pandas.Series")
     # 2. Calculate mean reversion factors for each moving average period:
+    mean_reversion_factors: pd.DataFrame = pd.DataFrame(index = price_series.index)
+    for period in ma_periods:
     #    - Calculate moving average: price_series.rolling(window=period, min_periods=1).mean()
+        ma = price_series.rolling(window=period, min_periods=1).mean()
     #    - Calculate deviation: (price_series - ma) / ma
+        factor = (price_series - ma) / ma
     # 3. Data cleaning:
     #    - Fill missing values with 0.0
+        factor = factor.fillna(0.0)
     #    - Outlier handling and standardization (using existing helper functions)
+        factor = handle_outliers_series(factor)
+        factor = standardize_series(factor)
     # 4. Organize results: Column name format as 'mean_reversion_{period}'
     #
+        mean_reversion_factors[f'mean_reversion_{period}'] = factor
     # Expected output: DataFrame with time as rows, mean reversion factors for different periods as columns
-    
-    raise NotImplementedError("Please implement mean reversion factor calculation logic")
+    return mean_reversion_factors
+    #raise NotImplementedError("Please implement mean reversion factor calculation logic")
 
 
 def calculate_volume_factors(
@@ -149,20 +185,44 @@ def calculate_volume_factors(
     #
     # Implementation hints:
     # 1. Input validation and preprocessing
+    if volume_series.empty:
+        raise ValueError("Input data cannot be empty")
+    if not isinstance(volume_series, pd.Series):
+        raise ValueError("Price series must be pandas.Series")
+    
     # 2. Calculate volume factors for each lookback period:
+    volume_series_factors: pd.DataFrame = pd.DataFrame(index = volume_series.index)
+    for period in lookback_periods:
     #    - Calculate historical average volume: volume_series.rolling(window=period, min_periods=1).mean()
+        avg_volume = volume_series.rolling(window=period, min_periods=1).mean()
     #    - Calculate volume ratio: volume_series / avg_volume
+        volume_ratio = volume_series / avg_volume
     #    - Calculate volume change rate: (volume_series - avg_volume) / avg_volume
+        volume_rate = (volume_series - avg_volume) / avg_volume
+
     # 3. Special handling:
     #    - Handle zero volume: replace([np.inf, -np.inf], appropriate values)
+        volume_ratio = volume_ratio.replace([np.inf, -np.inf], np.nan)
+        volume_rate = volume_rate.replace([np.inf, -np.inf], np.nan)
     #    - Fill volume ratio missing values with 1.0 (normal level)
+        volume_ratio = volume_ratio.fillna(1.0)
     #    - Fill volume change rate missing values with 0.0 (no change)
+        volume_rate = volume_rate.fillna(0.0)
+
     # 4. Data cleaning and standardization
+        volume_ratio = handle_outliers_series(volume_ratio)
+        volume_ratio = standardize_series(volume_ratio)
+        
+        volume_rate = handle_outliers_series(volume_rate)
+        volume_rate = standardize_series(volume_rate)
     # 5. Organize results: Each period corresponds to two columns 'volume_ratio_{period}' and 'volume_change_{period}'
     #
+        volume_series_factors[f'volume_ratio_{period}'] = volume_ratio
+        volume_series_factors[f'volume_change_{period}'] = volume_rate
     # Expected output: DataFrame with time as rows, volume factors for different periods as columns
     
-    raise NotImplementedError("Please implement volume factor calculation logic")
+    return volume_series_factors
+    #raise NotImplementedError("Please implement volume factor calculation logic")
 
 
 def calculate_intraday_factors(
@@ -199,22 +259,58 @@ def calculate_intraday_factors(
     #
     # Implementation hints:
     # 1. Input validation: Check if all input series are empty and of correct type
+    if price_series.empty or vwap_series.empty or open_series.empty:
+        raise ValueError("Input series cannot be empty")
+    if not (isinstance(price_series, pd.Series) and isinstance(vwap_series, pd.Series) and isinstance(open_series, pd.Series)):
+        raise ValueError("Price series must be pandas.Series")
     # 2. Data preprocessing: Forward fill all series
+    price_series = price_series.ffill()
+    vwap_series = vwap_series.ffill()
+    open_series = open_series.ffill()
     # 3. Calculate intraday features:
+    intraday_series_factors: pd.DataFrame = pd.DataFrame(index = price_series.index)
+
+    
     #    a) Post-opening return: (price_series - open_series) / open_series
+    post_opening_return = (price_series - open_series) / open_series
     #    b) VWAP deviation: (price_series - vwap_series) / vwap_series  
+    vwap_deviation = (price_series - vwap_series) / vwap_series
+    
     #    c) Intraday time feature: Calculate time ratio from market open
     #       - Market open time: 9:30
     #       - Market close time: 15:00
     #       - Time ratio: (current time - open time) / (close time - open time)
+    dt = pd.to_datetime(price_series.index.date)
+    open_dt = dt + pd.to_timedelta('09:30:00')
+    after_open_dt = (price_series.index - open_dt).total_seconds()
+    after_open_dt = np.clip(after_open_dt, a_min=0, a_max=None)
+    #close_dt = dt + pd.to_timedelta('15:00')
+
+    #19,800 seconds between 9:30am and 3pm
+    intraday_time_ratio = pd.Series(after_open_dt / 19800, index = price_series.index)
     # 4. Data cleaning:
     #    - Fill missing values with 0.0
+    post_opening_return = post_opening_return.fillna(0.0)
+    vwap_deviation = vwap_deviation.fillna(0.0)
+    intraday_time_ratio = intraday_time_ratio.fillna(0.0)
     #    - Outlier handling (3-sigma truncation)
+    post_opening_return = handle_outliers_series(post_opening_return)
+    vwap_deviation = handle_outliers_series(vwap_deviation)
+    intraday_time_ratio = handle_outliers_series(intraday_time_ratio)
+
     #    - Z-score standardization
+    post_opening_return = standardize_series(post_opening_return)
+    vwap_deviation = standardize_series(vwap_deviation)
+    intraday_time_ratio = standardize_series(intraday_time_ratio)
+
     # 5. Organize results: Column names as 'open_to_close_return', 'vwap_deviation', 'intraday_time_ratio'
     #
+    intraday_series_factors['open_to_close_return'] = post_opening_return
+    intraday_series_factors['vwap_deviation'] = vwap_deviation
+    intraday_series_factors['intraday_time_ratio'] = intraday_time_ratio
+
     # Expected output: DataFrame with time as rows, various intraday features as columns
-    
+    return intraday_series_factors
     raise NotImplementedError("Please implement intraday factor calculation logic")
 
 
@@ -291,23 +387,46 @@ def create_factor_dataset(
     # Implementation hints:
     # 1. Data merging and validation:
     #    - Use pd.concat() to merge all input data
+    output = pd.concat([price_data, volume_data, vwap_data, open_data], axis = 1)
     #    - Check if data is in MultiIndex format
+    if not isinstance(output.columns, pd.MultiIndex):
+        raise ValueError("Must be MultiIndex format")
     #    - Extract all stock symbols: columns.get_level_values(0).unique()
+    stocks = output.columns.get_level_values(0).unique()
     # 2. Calculate factors by stock:
     #    - Iterate through each stock symbol
+    allfactors = []
+    for stock in stocks:
     #    - Call calculate_factors_for_stock() to calculate all factors for that stock
+        factors = calculate_factors_for_stock(stock_data = output, stock_symbol= stock)
+
     #    - Add stock prefix to factor column names: f"{stock_symbol}_{col}"
+        factors = factors.add_prefix(f"{stock}_")
+        allfactors.append(factors)
+        
     # 3. Merge all factors:
     #    - Use pd.concat(all_factors, axis=1) for horizontal merging
+    factors_df = pd.concat(allfactors, axis = 1)
     #    - Handle empty data cases
+    factors_df = factors_df.ffill()
     # 4. Quality check:
     #    - Call check_factor_quality() function
+    quality_check = check_factor_quality(factors_df)
     #    - Print quality report summary
+    print(f"The toatal missing ratio: {quality_check['total_missing_ratio']:.4f}")
+    print(f"The average outlier ratio: {quality_check['avg_outlier_ratio']:.4f}")
+
     # 5. Save results:
     #    - Create results/part2 directory
+    results_path = Path("results/part2")
+    results_path.mkdir(parents=True, exist_ok=True)
+    save_path = results_path / "factor_df.csv"
+    factors_df.to_csv(save_path)
     #    - Save as CSV file
+    save_results(factors_df, save_path)
     #    - Return factor dataset
     #
+    return factors_df
     # Expected output: DataFrame with time as rows, all factors for all stocks as columns
     
     raise NotImplementedError("Please implement factor dataset creation logic")
