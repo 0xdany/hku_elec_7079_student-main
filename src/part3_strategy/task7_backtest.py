@@ -78,26 +78,41 @@ class _BollingerSingleAsset(_BaseSingleAssetStrategy):
         self.prev_above_upper: Optional[bool] = None
 
     def update(self, price: float, volume: Optional[float] = None) -> float:
-        # TODO: STUDENT IMPLEMENTATION REQUIRED
-        #
-        # Bollinger Bands implementation hints:
-        # 1. Update price history: self.prices.append(float(price))
-        # 2. Check history length: if len(self.prices) < self.window: return 0.0
-        # 3. Compute statistics:
-        #    - window_prices = np.array(self.prices[-self.window:])
-        #    - ma = window_prices.mean()
-        #    - vol = window_prices.std(ddof=0)
-        #    - upper = ma + self.num_std * vol
-        #    - lower = ma - self.num_std * vol
-        # 4. Detect crossings:
-        #    - was_below_lower, was_above_upper (previous state)
-        #    - is_below_lower = price < lower, is_above_upper = price > upper (current)
-        #    - buy signal: was_below_lower and price >= lower
-        #    - sell signal: was_above_upper and price <= upper
-        # 5. Update flags: self.prev_below_lower, self.prev_above_upper
-        # 6. Return signal: +1.0 (buy), -1.0 (sell), 0.0 (no signal)
+        # Append price to history
+        self.prices.append(float(price))
 
-        raise NotImplementedError("Please implement Bollinger Bands signal generation logic")
+        # Not enough history to form a band yet
+        if len(self.prices) < self.window:
+            return 0.0
+
+        # Calculate bands on the most recent window
+        window_prices = np.array(self.prices[-self.window:])
+        ma = window_prices.mean()
+        vol = window_prices.std(ddof=0)
+        upper = ma + self.num_std * vol
+        lower = ma - self.num_std * vol
+
+        # Current state relative to bands
+        is_below_lower = price < lower
+        is_above_upper = price > upper
+
+        # Previous states (defaults to False on first evaluation)
+        was_below_lower = bool(self.prev_below_lower)
+        was_above_upper = bool(self.prev_above_upper)
+
+        signal = 0.0
+        # Bullish signal: cross back above lower band after being below
+        if was_below_lower and price >= lower:
+            signal = 1.0
+        # Bearish signal: cross back below upper band after being above
+        elif was_above_upper and price <= upper:
+            signal = -1.0
+
+        # Update flags for next step
+        self.prev_below_lower = is_below_lower
+        self.prev_above_upper = is_above_upper
+
+        return signal
 
 
 class _MACDSingleAsset(_BaseSingleAssetStrategy):
@@ -118,23 +133,31 @@ class _MACDSingleAsset(_BaseSingleAssetStrategy):
         return alpha * float(price) + (1.0 - alpha) * prev
 
     def update(self, price: float, volume: Optional[float] = None) -> float:
-        # TODO: STUDENT IMPLEMENTATION REQUIRED
-        #
-        # MACD implementation hints:
-        # 1. Update EMAs:
-        #    - self.ema_fast = self._ema(self.ema_fast, price, self.fast)
-        #    - self.ema_slow = self._ema(self.ema_slow, price, self.slow)
-        # 2. Compute MACD line: macd = self.ema_fast - self.ema_slow
-        # 3. Update signal line EMA: self.macd_sig = self._ema(self.macd_sig, macd, self.sig)
-        # 4. Detect crossovers:
-        #    - Previous state: was_lt, was_gt (MACD vs signal)
-        #    - Current state: is_lt = macd < self.macd_sig, is_gt = macd > self.macd_sig
-        #    - Bullish crossover: was_lt and macd >= self.macd_sig
-        #    - Bearish crossover: was_gt and macd <= self.macd_sig
-        # 5. Update flags: self.prev_macd_lt_sig, self.prev_macd_gt_sig
-        # 6. Return signal: +1.0 (buy), -1.0 (sell), 0.0 (no signal)
+        # Update EMAs
+        self.ema_fast = self._ema(self.ema_fast, price, self.fast)
+        self.ema_slow = self._ema(self.ema_slow, price, self.slow)
 
-        raise NotImplementedError("Please implement MACD signal generation logic")
+        macd = self.ema_fast - self.ema_slow
+        self.macd_sig = self._ema(self.macd_sig, macd, self.sig)
+
+        # Determine current relation
+        is_lt = macd < self.macd_sig
+        is_gt = macd > self.macd_sig
+
+        was_lt = bool(self.prev_macd_lt_sig)
+        was_gt = bool(self.prev_macd_gt_sig)
+
+        signal = 0.0
+        if was_lt and macd >= self.macd_sig:
+            signal = 1.0  # bullish crossover
+        elif was_gt and macd <= self.macd_sig:
+            signal = -1.0  # bearish crossover
+
+        # Update flags
+        self.prev_macd_lt_sig = is_lt
+        self.prev_macd_gt_sig = is_gt
+
+        return signal
 
 
 class LongShortStrategy:
@@ -238,43 +261,112 @@ class LongShortStrategy:
         Returns:
             Dict[str, Any]: Results including returns, nav, weights, turnover, costs, and trade log.
         """
-        # TODO: STUDENT IMPLEMENTATION REQUIRED
-        #
-        # Long-short backtest implementation hints:
-        # 1. Preprocessing:
-        #    - Ensure either prices or returns is provided
-        #    - Extract price matrix via _extract_close_prices()
-        #    - Get symbol list and time index
-        # 2. Initialize strategy and containers:
-        #    - If using technical indicators, init per-asset strategies: _init_single_asset_strategies()
-        #    - Create containers: weights history, turnover, costs, portfolio returns, etc.
-        # 3. Main loop (iterate over time):
-        #    a) Compute current-period returns
-        #    b) Apply pending weight changes:
-        #       - delta = pending_w - current_w
-        #       - turnover = abs(delta).sum()
-        #       - cost = turnover * transaction_cost
-        #       - record trade log
-        #    c) Portfolio return: (current_w * returns).sum() - transaction_cost
-        #    d) Generate next-period signals:
-        #       - Technical strategies: update per-asset strategies, get signals
-        #       - Prediction strategies: use provided predictions
-        #       - Rebalance by rebalance_periods
-        #    e) Update state variables
-        # 4. Post-processing:
-        #    - nav = (1 + returns).cumprod()
-        #    - capital_used = gross_exposure * nav
-        #    - tidy trade log
+        # --- 1) Preprocessing ---
+        if returns is None and prices is None:
+            raise ValueError("Provide either returns or prices for backtest.")
 
-        raise NotImplementedError("Please implement long-short backtest logic")
+        price_matrix = _extract_close_prices(prices) if prices is not None else None
+
+        if returns is None:
+            if price_matrix is None:
+                raise ValueError("Prices are required to compute returns.")
+            returns = _pct_change_returns(price_matrix)
+        else:
+            returns = returns.copy()
+
+        # Align and clean
+        returns = returns.fillna(0.0)
+        symbols = list(returns.columns)
+        time_index = returns.index
+
+        if self.signal_type in ["bollinger", "macd"]:
+            if price_matrix is None:
+                raise ValueError("Prices required for technical signal strategies.")
+            # align price matrix to returns index
+            price_matrix = price_matrix.reindex(time_index)
+            self._init_single_asset_strategies(symbols)
+
+        # --- 2) Containers ---
+        weights_hist = pd.DataFrame(0.0, index=time_index, columns=symbols)
+        turnover_series = pd.Series(0.0, index=time_index)
+        tx_cost_series = pd.Series(0.0, index=time_index)
+        port_ret_series = pd.Series(0.0, index=time_index)
+        gross_exp_series = pd.Series(0.0, index=time_index)
+        trade_log: List[Dict[str, Any]] = []
+
+        current_w = pd.Series(0.0, index=symbols)
+        pending_w = pd.Series(0.0, index=symbols)
+        bars_since_rebalance = 0
+
+        # --- 3) Main loop ---
+        for ts in time_index:
+            curr_returns = returns.loc[ts].fillna(0.0)
+
+            # apply pending weights (decided previous bar)
+            delta = pending_w - current_w
+            turnover = float(delta.abs().sum())
+            tx_cost = turnover * self.transaction_cost
+
+            if turnover > 0:
+                for sym in symbols:
+                    change = float(delta[sym])
+                    if abs(change) > 1e-12:
+                        trade_log.append(
+                            {
+                                "timestamp": ts,
+                                "symbol": sym,
+                                "weight_change": change,
+                                "turnover_contribution": abs(change),
+                            }
+                        )
+
+            current_w = pending_w.copy()
+
+            gross_ret = float((current_w * curr_returns).sum())
+            net_ret = gross_ret - tx_cost
+
+            port_ret_series.loc[ts] = net_ret
+            weights_hist.loc[ts] = current_w
+            turnover_series.loc[ts] = turnover
+            tx_cost_series.loc[ts] = tx_cost
+            gross_exp_series.loc[ts] = float(current_w.abs().sum())
+
+            # --- signal generation for next period ---
+            if bars_since_rebalance % self.rebalance_periods == 0:
+                # build scores for this timestamp
+                if self.signal_type == "predictions":
+                    if predictions is None:
+                        raise ValueError("predictions must be provided for signal_type='predictions'")
+                    if ts not in predictions.index:
+                        # if missing timestamp, keep current pending weights
+                        bars_since_rebalance += 1
+                        continue
+                    scores = predictions.loc[ts]
+                    pending_w = self._construct_weights_from_scores_once(scores, symbols)
+                elif self.signal_type in ["bollinger", "macd"]:
+                    curr_prices = price_matrix.loc[ts]
+                    sigs = pd.Series(0.0, index=symbols)
+                    for sym in symbols:
+                        price_val = curr_prices.get(sym, np.nan)
+                        if pd.notna(price_val):
+                            sigs[sym] = self._single_asset[sym].update(float(price_val))
+                    pending_w = self._construct_weights_from_scores_once(sigs, symbols)
+                else:
+                    raise ValueError(f"Unsupported signal_type {self.signal_type}")
+
+            bars_since_rebalance += 1
+
+        # --- 4) Post-processing ---
+        nav = (1.0 + port_ret_series).cumprod()
+        capital_used = gross_exp_series * nav
 
         results = {
-            "returns": port_ret,
+            "returns": port_ret_series,
             "nav": nav,
             "weights": weights_hist,
-            "turnover": turnover,
-            "transaction_costs": tx_costs,
-            "gross_exposure": gross_exposure,
+            "turnover": turnover_series,
+            "transaction_costs": tx_cost_series,
+            "gross_exposure": gross_exp_series,
             "capital_used": capital_used,
             "trade_log": trade_log,
         }
@@ -380,5 +472,4 @@ if __name__ == "__main__":
     print(f"Total Return: {(float(res_pred['nav'].iloc[-1]) - 1.0) * 100:.2f}%")
     print(f"Number of Trades: {len(res_pred['trade_log'])}")
     print(f"Total Transaction Costs: {float(res_pred['transaction_costs'].sum()):.6f}")
-
 
