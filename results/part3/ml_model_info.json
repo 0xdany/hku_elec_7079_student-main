@@ -1,0 +1,22 @@
+{
+  "train_ratio": 0.6,
+  "forward_periods": 12,
+  "model_type": "linear",
+  "factor_names": [
+    "reversal_6",
+    "reversal_12",
+    "reversal_24",
+    "reversal_48",
+    "ma_dev_24",
+    "ma_dev_48",
+    "ma_dev_96",
+    "volatility_12",
+    "volatility_24",
+    "volatility_48",
+    "vol_ratio_24",
+    "vol_ratio_48"
+  ],
+  "n_train_samples": 4261736,
+  "n_stocks": 100,
+  "train_end_date": "2022-08-08 13:25:00"
+}
