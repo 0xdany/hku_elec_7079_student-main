@@ -24,35 +24,54 @@ def calculate_performance_metrics(returns_series: pd.Series) -> Dict[str, float]
     Returns:
         Dict[str, float]: Metrics such as total_return, sharpe_ratio, max_drawdown
     """
-    rets = returns_series.dropna()
+
+    # TODO: STUDENT IMPLEMENTATION REQUIRED
+    #
+    # Implementation hints for performance metrics:
+    # 1. Preprocess: remove NaNs via returns_series.dropna()
+    # 2. Return metrics:
+    #    - total return: (1 + r).prod() - 1
+    #    - annualized return: (1 + r.mean()) ** 252 - 1  (assume 252 trading days)
+    # 3. Risk metrics:
+    #    - annualized volatility: r.std() * sqrt(252)
+    #    - max drawdown: max((running peak - cumulative) / running peak)
+    # 4. Risk-adjusted return:
+    #    - Sharpe ratio: annualized return / annualized volatility
+    # 5. Build result dict:
+    #    - Include total_return, annualized_return, annualized_volatility
+    #    - sharpe_ratio, max_drawdown, turnover, etc.
+    #
+    # Expected output: Dict[str, float] containing all key metrics
+
+    rets = returns_series.dropna()  # drop nans, obvs
     if len(rets) == 0:
         return {}
 
-    total_return = float((1 + rets).prod() - 1)
-    mean_ret = float(rets.mean())
-    vol = float(rets.std())
+    total_return = float((1 + rets).prod() - 1)  # total ret calc
+    mean_ret = float(rets.mean())  # mean ret, duh
+    vol = float(rets.std())  # std dev, prob fine
 
     annualized_return = (1 + mean_ret) ** 252 - 1
     annualized_volatility = vol * np.sqrt(252)
 
-    # Drawdown
+    # calc drawdown, probs should check this later lol
     cumulative = (1 + rets).cumprod()
     running_max = cumulative.expanding().max()
     drawdown = (cumulative - running_max) / running_max
     max_drawdown = float(drawdown.min()) if len(drawdown) else 0.0
 
-    sharpe_ratio = annualized_return / annualized_volatility if annualized_volatility > 0 else 0.0
+    sharpe_ratio = annualized_return / annualized_volatility if annualized_volatility > 0 else 0.0  # sharpe, hope this is right
 
-    downside = rets[rets < 0]
+    downside = rets[rets < 0]  # only neg rets
     if len(downside) > 0:
         downside_vol = float(downside.std()) * np.sqrt(252)
         sortino_ratio = annualized_return / downside_vol if downside_vol > 0 else 0.0
     else:
         sortino_ratio = float("inf") if annualized_return > 0 else 0.0
 
-    win_rate = float((rets > 0).sum() / len(rets))
-    avg_win = float(rets[rets > 0].mean()) if (rets > 0).any() else 0.0
-    avg_loss = float(abs(rets[rets < 0].mean())) if (rets < 0).any() else 0.0
+    win_rate = float((rets > 0).sum() / len(rets))  # win rate calc
+    avg_win = float(rets[rets > 0].mean()) if (rets > 0).any() else 0.0  # avg win, seems ok
+    avg_loss = float(abs(rets[rets < 0].mean())) if (rets < 0).any() else 0.0  # avg loss, abs val
     profit_loss_ratio = avg_win / avg_loss if avg_loss > 0 else 0.0
 
     return {
@@ -78,32 +97,49 @@ def compare_with_benchmarks(strategy_returns: pd.Series, benchmark_returns: pd.S
     Returns:
         Dict[str, float]: Comparison metrics
     """
-    strat = strategy_returns.dropna()
+
+    # TODO: STUDENT IMPLEMENTATION REQUIRED
+    #
+    # Benchmark comparison implementation hints:
+    # 1. Align and clean data:
+    #    - Drop NaNs in strategy returns
+    #    - Reindex benchmark to strategy index: benchmark_returns.reindex(s.index)
+    #    - Ensure equal lengths and sufficient data
+    # 2. Excess return: excess = strategy_returns - benchmark_returns
+    # 3. Information ratio:
+    #    - tracking_error = excess.std() * sqrt(252)
+    #    - IR = annualized excess return / tracking_error
+    # 4. Correlation: strategy_returns.corr(benchmark_returns)
+    # 5. Return a metrics dict
+    #
+    # Expected output: Dict[str, float] containing information_ratio, correlation, etc.
+
+    strat = strategy_returns.dropna()  # clean strat rets
     if strat.empty:
         return {}
 
-    bench = benchmark_returns.reindex(strat.index).fillna(0.0)
+    bench = benchmark_returns.reindex(strat.index).fillna(0.0)  # align bench to strat idx
     if len(bench) != len(strat) or len(strat) < 2:
         return {}
 
-    excess = strat - bench
-    excess_mean = float(excess.mean())
-    excess_std = float(excess.std())
+    excess = strat - bench  # excess rets
+    excess_mean = float(excess.mean())  # mean excess
+    excess_std = float(excess.std())  # std of excess
 
-    annualized_excess = (1 + excess_mean) ** 252 - 1
-    tracking_error = excess_std * np.sqrt(252)
-    information_ratio = annualized_excess / tracking_error if tracking_error > 0 else 0.0
+    annualized_excess = (1 + excess_mean) ** 252 - 1  # ann excess ret
+    tracking_error = excess_std * np.sqrt(252)  # track err, sqrt(252) for ann
+    information_ratio = annualized_excess / tracking_error if tracking_error > 0 else 0.0  # IR calc
 
-    correlation = float(strat.corr(bench))
+    correlation = float(strat.corr(bench))  # corr btw strat n bench
 
-    if float(bench.std()) > 0:
-        beta = float(strat.cov(bench) / bench.var())
+    if float(bench.std()) > 0:  # check if bench has vol
+        beta = float(strat.cov(bench) / bench.var())  # beta calc, cov/var
     else:
-        beta = 0.0
+        beta = 0.0  # no vol means no beta ig
 
-    strat_ann = (1 + float(strat.mean())) ** 252 - 1
-    bench_ann = (1 + float(bench.mean())) ** 252 - 1
-    alpha = strat_ann - beta * bench_ann
+    strat_ann = (1 + float(strat.mean())) ** 252 - 1  # ann strat ret
+    bench_ann = (1 + float(bench.mean())) ** 252 - 1  # ann bench ret
+    alpha = strat_ann - beta * bench_ann  # alpha, jensen's alpha i think?
 
     return {
         "information_ratio": float(information_ratio),
@@ -125,10 +161,29 @@ def generate_performance_report(strategy_results: Dict[str, Any]) -> Dict[str, A
     Returns:
         Dict[str, Any]: Report with metrics and final nav
     """
-    returns = strategy_results.get("returns", pd.Series())
-    nav = strategy_results.get("nav", pd.Series())
-    turnover = strategy_results.get("turnover", pd.Series())
-    tx_costs = strategy_results.get("transaction_costs", pd.Series())
+
+    # TODO: STUDENT IMPLEMENTATION REQUIRED
+    #
+    # Report generation implementation hints:
+    # 1. Extract from backtest results:
+    #    - returns = strategy_results.get("returns", ...)
+    #    - nav = strategy_results.get("nav", ...)
+    #    - optionally weights history, trade log, etc.
+    # 2. Call performance calculation:
+    #    - use calculate_performance_metrics()
+    # 3. Construct report:
+    #    - include metrics dict
+    #    - final nav: nav.iloc[-1]
+    #    - number of periods: len(returns)
+    #    - other summary info
+    # 4. Return the report dict
+    #
+    # Expected output: Dict[str, Any] containing a complete performance report
+
+    returns = strategy_results.get("returns", pd.Series())  # get rets from results
+    nav = strategy_results.get("nav", pd.Series())  # nav series
+    turnover = strategy_results.get("turnover", pd.Series())  # turnover data
+    tx_costs = strategy_results.get("transaction_costs", pd.Series())  # tx costs, fees n stuff
     trade_log = strategy_results.get("trade_log", [])
 
     if returns is None or len(returns) == 0:

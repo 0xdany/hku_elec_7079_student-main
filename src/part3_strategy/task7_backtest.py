@@ -39,7 +39,7 @@ def _extract_close_prices(data: pd.DataFrame) -> pd.DataFrame:
         if not close:
             raise KeyError("No close_px field found in provided data.")
         return pd.DataFrame(close)
-    # Already wide-format
+    # already wide format lol
     return data.copy()
 
 
@@ -78,37 +78,59 @@ class _BollingerSingleAsset(_BaseSingleAssetStrategy):
         self.prev_above_upper: Optional[bool] = None
 
     def update(self, price: float, volume: Optional[float] = None) -> float:
-        # Append price to history
+        # TODO: STUDENT IMPLEMENTATION REQUIRED
+        #
+        # Bollinger Bands implementation hints:
+        # 1. Update price history: self.prices.append(float(price))
+        # 2. Check history length: if len(self.prices) < self.window: return 0.0
+        # 3. Compute statistics:
+        #    - window_prices = np.array(self.prices[-self.window:])
+        #    - ma = window_prices.mean()
+        #    - vol = window_prices.std(ddof=0)
+        #    - upper = ma + self.num_std * vol
+        #    - lower = ma - self.num_std * vol
+        # 4. Detect crossings:
+        #    - was_below_lower, was_above_upper (previous state)
+        #    - is_below_lower = price < lower, is_above_upper = price > upper (current)
+        #    - buy signal: was_below_lower and price >= lower
+        #    - sell signal: was_above_upper and price <= upper
+        # 5. Update flags: self.prev_below_lower, self.prev_above_upper
+        # 6. Return signal: +1.0 (buy), -1.0 (sell), 0.0 (no signal)
+        # append price to histroy ugh
+
         self.prices.append(float(price))
 
-        # Not enough history to form a band yet
+        # not enuf history to form a band yet... 
         if len(self.prices) < self.window:
             return 0.0
 
-        # Calculate bands on the most recent window
+        # calc bands on the most recent windwo pls work
         window_prices = np.array(self.prices[-self.window:])
-        ma = window_prices.mean()
-        vol = window_prices.std(ddof=0)
-        upper = ma + self.num_std * vol
-        lower = ma - self.num_std * vol
+        ma = window_prices.mean()  # mean stuff
+        vol = window_prices.std(ddof=0)  # std dev i guess
+        upper = ma + self.num_std * vol  # upper band
+        lower = ma - self.num_std * vol  # lower band
 
-        # Current state relative to bands
+        # curr state relative to bands... 
         is_below_lower = price < lower
         is_above_upper = price > upper
 
-        # Previous states (defaults to False on first evaluation)
+        # prev states (defaults to False on first eval) why is this so complicated
         was_below_lower = bool(self.prev_below_lower)
         was_above_upper = bool(self.prev_above_upper)
 
-        signal = 0.0
-        # Bullish signal: cross back above lower band after being below
+        signal = 0.0  # start w zero
+
+
+
+        # bullish signal: cross back above lower band after being below... finally
         if was_below_lower and price >= lower:
             signal = 1.0
-        # Bearish signal: cross back below upper band after being above
+        # bearish signal: cross back below upper band after being above
         elif was_above_upper and price <= upper:
             signal = -1.0
 
-        # Update flags for next step
+        # update flags for next step... pls end soon
         self.prev_below_lower = is_below_lower
         self.prev_above_upper = is_above_upper
 
@@ -133,27 +155,44 @@ class _MACDSingleAsset(_BaseSingleAssetStrategy):
         return alpha * float(price) + (1.0 - alpha) * prev
 
     def update(self, price: float, volume: Optional[float] = None) -> float:
-        # Update EMAs
+        # TODO: STUDENT IMPLEMENTATION REQUIRED
+        #
+        # MACD implementation hints:
+        # 1. Update EMAs:
+        #    - self.ema_fast = self._ema(self.ema_fast, price, self.fast)
+        #    - self.ema_slow = self._ema(self.ema_slow, price, self.slow)
+        # 2. Compute MACD line: macd = self.ema_fast - self.ema_slow
+        # 3. Update signal line EMA: self.macd_sig = self._ema(self.macd_sig, macd, self.sig)
+        # 4. Detect crossovers:
+        #    - Previous state: was_lt, was_gt (MACD vs signal)
+        #    - Current state: is_lt = macd < self.macd_sig, is_gt = macd > self.macd_sig
+        #    - Bullish crossover: was_lt and macd >= self.macd_sig
+        #    - Bearish crossover: was_gt and macd <= self.macd_sig
+        # 5. Update flags: self.prev_macd_lt_sig, self.prev_macd_gt_sig
+        # 6. Return signal: +1.0 (buy), -1.0 (sell), 0.0 (no signal)
+
+
+        # update EMAs... so many EMAs why
         self.ema_fast = self._ema(self.ema_fast, price, self.fast)
-        self.ema_slow = self._ema(self.ema_slow, price, self.slow)
+        self.ema_slow = self._ema(self.ema_slow, price, self.slow)  # slow one
 
-        macd = self.ema_fast - self.ema_slow
-        self.macd_sig = self._ema(self.macd_sig, macd, self.sig)
+        macd = self.ema_fast - self.ema_slow  # diff i guess
+        self.macd_sig = self._ema(self.macd_sig, macd, self.sig)  # signal line ugh
 
-        # Determine current relation
+        # determine current relation... ..... af
         is_lt = macd < self.macd_sig
         is_gt = macd > self.macd_sig
 
-        was_lt = bool(self.prev_macd_lt_sig)
-        was_gt = bool(self.prev_macd_gt_sig)
+        was_lt = bool(self.prev_macd_lt_sig)  # prev state
+        was_gt = bool(self.prev_macd_gt_sig)  # prev state again
 
-        signal = 0.0
+        signal = 0.0  # default
         if was_lt and macd >= self.macd_sig:
-            signal = 1.0  # bullish crossover
+            signal = 1.0  # bullish crossover finally
         elif was_gt and macd <= self.macd_sig:
             signal = -1.0  # bearish crossover
 
-        # Update flags
+        # update flags... almost done
         self.prev_macd_lt_sig = is_lt
         self.prev_macd_gt_sig = is_gt
 
@@ -225,16 +264,16 @@ class LongShortStrategy:
         self.transaction_cost = float(transaction_cost)
         self.max_gross_leverage = float(max_gross_leverage)
         self.signal_type = signal_type
-        # Default signal_params for reversal: lookback=6 bars (30 min for 5-min data)
+        # default signal_params for reversal: lookback=6 bars (30 min for 5-min data) .....
         self.signal_params = signal_params if signal_params is not None else {"lookback": 6}
         self._single_asset: Dict[str, _BaseSingleAssetStrategy] = {}
-        # Dynamic position sizing
+        # dynamic positon sizing... typo but too ..... to fix
         self.use_dynamic_sizing = use_dynamic_sizing
-        self.target_volatility = target_volatility
-        # Smart rebalancing parameters
+        self.target_volatility = target_volatility  # vol target
+        # smart rebalancing params... if only i was smart
         self.use_partial_rebalancing = use_partial_rebalancing
         self.min_trade_threshold = float(min_trade_threshold)
-        # Universe filtering
+        # universe filtering... filter the universe lol
         self.use_universe_filter = use_universe_filter
         self.min_liquidity_pct = float(min_liquidity_pct)
         self.max_volatility_pct = float(max_volatility_pct)
@@ -253,10 +292,10 @@ class LongShortStrategy:
             for s in symbols:
                 self._single_asset[s] = _MACDSingleAsset(fast=f, slow=sl, sig=sg)
         elif self.signal_type in ["predictions", "reversal", "adaptive"]:
-            # No per-asset strategy instances needed for predictions, reversal, or adaptive
+            # no per-asset strategy instances needed for predictions, reversal, or adaptive... thank god
             pass
         else:
-            raise ValueError("Unsupported signal_type: %s" % self.signal_type)
+            raise ValueError("Unsupported signal_type: %s" % self.signal_type)  # error handling ugh
 
     def _construct_weights_from_scores_once(
         self, 
@@ -281,21 +320,21 @@ class LongShortStrategy:
         
         q_long = s.quantile(1.0 - self.long_quantile)
         q_short = s.quantile(self.short_quantile)
-        long_names = list(s[s >= q_long].index)
-        short_names = list(s[s <= q_short].index)
+        long_names = list(s[s >= q_long].index)  # longs
+        short_names = list(s[s <= q_short].index)  # shorts
         
-        # Apply dynamic scaling
-        combined_scale = min(signal_strength_scale * vol_scale, 1.0)
-        gross_side = (self.max_gross_leverage / 2.0) * combined_scale
+        # apply dynamic scaling... scaling stuff .....
+        combined_scale = min(signal_strength_scale * vol_scale, 1.0)  # combine scales
+        gross_side = (self.max_gross_leverage / 2.0) * combined_scale  # gross side
         
-        wl = gross_side / max(len(long_names), 1)
-        ws = -gross_side / max(len(short_names), 1)
-        w = pd.Series(0.0, index=symbols)
+        wl = gross_side / max(len(long_names), 1)  # weight for longs
+        ws = -gross_side / max(len(short_names), 1)  # weight for shorts
+        w = pd.Series(0.0, index=symbols)  # init weights
         if long_names:
-            w.loc[long_names] = wl
+            w.loc[long_names] = wl  # set long weights
         if short_names:
-            w.loc[short_names] = ws
-        return w
+            w.loc[short_names] = ws  # set short weights
+        return w  # finally return
     
     def _compute_signal_strength(self, scores: pd.Series) -> float:
         """
@@ -303,37 +342,37 @@ class LongShortStrategy:
         Higher dispersion = more confidence = larger positions.
         Returns scale factor between 0.3 and 1.0.
         """
-        s = scores.dropna()
-        if len(s) < 10:
+        s = scores.dropna()  # drop nans
+        if len(s) < 10:  # not enuf data
             return 0.5
         
-        # Use interquartile range as measure of signal dispersion
-        iqr = s.quantile(0.75) - s.quantile(0.25)
+        # use interquartile range as measure of signal dispersion... iqr stuff
+        iqr = s.quantile(0.75) - s.quantile(0.25)  # calc iqr
         
-        # Normalize: typical IQR for returns is around 0.01-0.05
-        # Scale so IQR of 0.02 -> 0.7, IQR of 0.05 -> 1.0
-        strength = min(max(iqr / 0.05, 0.3), 1.0)
-        return strength
+        # normalize: typical IQR for returns is around 0.01-0.05... .....
+        # scale so IQR of 0.02 -> 0.7, IQR of 0.05 -> 1.0... magic numbers
+        strength = min(max(iqr / 0.05, 0.3), 1.0)  # bound it
+        return strength  # return strength
     
     def _compute_vol_scale(self, returns: pd.Series, target_vol: float = 0.15) -> float:
         """
         Compute volatility scaling factor to target a specific annualized volatility.
         Returns scale factor between 0.2 and 1.5.
         """
-        if len(returns) < 20:
+        if len(returns) < 20:  # not enuf data
             return 1.0
         
-        # Recent realized volatility (annualized from 5-min data)
-        recent_vol = returns.iloc[-240:].std() * np.sqrt(252 * 48)  # Last ~5 days
+        # recent realized volatility (annualized from 5-min data)... vol calc .....
+        recent_vol = returns.iloc[-240:].std() * np.sqrt(252 * 48)  # last ~5 days
         
-        if recent_vol <= 0 or np.isnan(recent_vol):
+        if recent_vol <= 0 or np.isnan(recent_vol):  # check for invalid vol
             return 1.0
         
-        # Scale to target volatility
-        scale = target_vol / recent_vol
+        # scale to target volatility... scaling again
+        scale = target_vol / recent_vol  # simple division
         
-        # Bound the scale factor
-        return min(max(scale, 0.2), 1.5)
+        # bound the scale factor... bounds everywhere
+        return min(max(scale, 0.2), 1.5)  # return bounded scale
     
     def _apply_partial_rebalancing(
         self, 
@@ -353,21 +392,21 @@ class LongShortStrategy:
         Returns:
             Adjusted target weights that minimize unnecessary trades
         """
-        delta = target_weights - current_weights
+        delta = target_weights - current_weights  # calc delta
         
-        # Only trade positions where |delta| > threshold
-        adjusted = current_weights.copy()
+        # only trade positions where |delta| > threshold... threshold stuff
+        adjusted = current_weights.copy()  # copy weights
         
-        for sym in delta.index:
-            if abs(delta[sym]) >= min_threshold:
-                # Execute this trade
-                adjusted[sym] = target_weights[sym]
-            # else: keep current weight
+        for sym in delta.index:  # loop thru symbols .....
+            if abs(delta[sym]) >= min_threshold:  # check threshold
+                # execute this trade... finally
+                adjusted[sym] = target_weights[sym]  # update weight
+            # else: keep current weight... do nothing
         
-        return adjusted
+        return adjusted  # return adjusted weights
 
     def _construct_target_weights(self, scores: pd.DataFrame) -> pd.DataFrame:
-        # Deprecated in row-wise engine; kept for backward compatibility if needed
+        # deprecated in row-wise engine; kept for backward compatability if needed
         index = scores.index
         symbols = list(scores.columns)
         out = pd.DataFrame(0.0, index=index, columns=symbols)
@@ -394,70 +433,98 @@ class LongShortStrategy:
         Returns:
             Dict[str, Any]: Results including returns, nav, weights, turnover, costs, and trade log.
         """
-        # --- 1) Preprocessing ---
-        if returns is None and prices is None:
+        # TODO: STUDENT IMPLEMENTATION REQUIRED
+        #
+        # Long-short backtest implementation hints:
+        # 1. Preprocessing:
+        #    - Ensure either prices or returns is provided
+        #    - Extract price matrix via _extract_close_prices()
+        #    - Get symbol list and time index
+        # 2. Initialize strategy and containers:
+        #    - If using technical indicators, init per-asset strategies: _init_single_asset_strategies()
+        #    - Create containers: weights history, turnover, costs, portfolio returns, etc.
+        # 3. Main loop (iterate over time):
+        #    a) Compute current-period returns
+        #    b) Apply pending weight changes:
+        #       - delta = pending_w - current_w
+        #       - turnover = abs(delta).sum()
+        #       - cost = turnover * transaction_cost
+        #       - record trade log
+        #    c) Portfolio return: (current_w * returns).sum() - transaction_cost
+        #    d) Generate next-period signals:
+        #       - Technical strategies: update per-asset strategies, get signals
+        #       - Prediction strategies: use provided predictions
+        #       - Rebalance by rebalance_periods
+        #    e) Update state variables
+        # 4. Post-processing:
+        #    - nav = (1 + returns).cumprod()
+        #    - capital_used = gross_exposure * nav
+        #    - tidy trade log
+
+        #  preprocessing... so much preprocessing ugh
+        if returns is None and prices is None:  # check inputs
             raise ValueError("Provide either returns or prices for backtest.")
 
-        price_matrix = _extract_close_prices(prices) if prices is not None else None
+        price_matrix = _extract_close_prices(prices) if prices is not None else None  # extract prices
 
-        if returns is None:
-            if price_matrix is None:
+        if returns is None:  # no returns provided
+            if price_matrix is None:  # no prices either
                 raise ValueError("Prices are required to compute returns.")
-            returns = _pct_change_returns(price_matrix)
+            returns = _pct_change_returns(price_matrix)  # calc returns
         else:
-            returns = returns.copy()
+            returns = returns.copy()  # copy returns
 
-        # Align and clean
-        returns = returns.fillna(0.0)
-        symbols = list(returns.columns)
-        time_index = returns.index
+        # align and clean... cleaning data .....
+        returns = returns.fillna(0.0)  # fill nans
+        symbols = list(returns.columns)  # get symbols
+        time_index = returns.index  # get time index
 
-        if self.signal_type in ["bollinger", "macd", "reversal", "adaptive"]:
-            if price_matrix is None:
+        if self.signal_type in ["bollinger", "macd", "reversal", "adaptive"]:  # tech signals
+            if price_matrix is None:  # need prices
                 raise ValueError("Prices required for technical signal strategies.")
-            # align price matrix to returns index
+            # align price matrix to returns index... alignment stuff
             price_matrix = price_matrix.reindex(time_index)
-            self._init_single_asset_strategies(symbols)
+            self._init_single_asset_strategies(symbols)  # init strategies
         
-        # For adaptive strategy, pre-compute regime indicators
-        if self.signal_type == "adaptive":
-            # Market index (equal-weighted average of all stocks)
-            market_returns = returns.mean(axis=1)
-            # Rolling volatility (20-day = 960 bars for 5-min data, use 240 for more responsive)
-            vol_window = int(self.signal_params.get("vol_window", 240))
-            self._rolling_vol = market_returns.rolling(vol_window).std()
-            # Long-term volatility for comparison
-            self._long_vol = market_returns.rolling(vol_window * 4).std()
-            # Market trend (momentum of market index)
-            trend_window = int(self.signal_params.get("trend_window", 480))
-            self._market_trend = market_returns.rolling(trend_window).sum()
+        # for adaptive strategy, pre-compute regime indicators... adaptive stuff
+        if self.signal_type == "adaptive":  # adaptive mode
+            # market index (equal-weighted average of all stocks)... market stuff
+            market_returns = returns.mean(axis=1)  # mean returns
+            # rolling volatility (20-day = 960 bars for 5-min data, use 240 for more responsive)... vol calc
+            vol_window = int(self.signal_params.get("vol_window", 240))  # vol window
+            self._rolling_vol = market_returns.rolling(vol_window).std()  # rolling vol
+            # long-term volatility for comparison... long term stuff
+            self._long_vol = market_returns.rolling(vol_window * 4).std()  # long vol
+            # market trend (momentum of market index)... trend stuff
+            trend_window = int(self.signal_params.get("trend_window", 480))  # trend window
+            self._market_trend = market_returns.rolling(trend_window).sum()  # market trend
 
-        # --- 2) Containers ---
-        weights_hist = pd.DataFrame(0.0, index=time_index, columns=symbols)
-        turnover_series = pd.Series(0.0, index=time_index)
-        tx_cost_series = pd.Series(0.0, index=time_index)
-        port_ret_series = pd.Series(0.0, index=time_index)
-        gross_exp_series = pd.Series(0.0, index=time_index)
-        trade_log: List[Dict[str, Any]] = []
+        # --- 2) containers ---... so many containers .....
+        weights_hist = pd.DataFrame(0.0, index=time_index, columns=symbols)  # weight history
+        turnover_series = pd.Series(0.0, index=time_index)  # turnover
+        tx_cost_series = pd.Series(0.0, index=time_index)  # transaction costs
+        port_ret_series = pd.Series(0.0, index=time_index)  # portfolio returns
+        gross_exp_series = pd.Series(0.0, index=time_index)  # gross exposure
+        trade_log: List[Dict[str, Any]] = []  # trade log
 
-        current_w = pd.Series(0.0, index=symbols)
-        pending_w = pd.Series(0.0, index=symbols)
-        bars_since_rebalance = 0
+        current_w = pd.Series(0.0, index=symbols)  # current weights
+        pending_w = pd.Series(0.0, index=symbols)  # pending weights
+        bars_since_rebalance = 0  # rebalance counter
 
-        # --- 3) Main loop ---
-        for ts in time_index:
-            curr_returns = returns.loc[ts].fillna(0.0)
+        # --- 3) main loop ---... the big loop ugh
+        for ts in time_index:  # loop thru time .....
+            curr_returns = returns.loc[ts].fillna(0.0)  # current returns
 
-            # apply pending weights (decided previous bar)
-            delta = pending_w - current_w
-            turnover = float(delta.abs().sum())
-            tx_cost = turnover * self.transaction_cost
+            # apply pending weights (decided previous bar)... apply weights
+            delta = pending_w - current_w  # calc delta
+            turnover = float(delta.abs().sum())  # calc turnover
+            tx_cost = turnover * self.transaction_cost  # calc cost
 
-            if turnover > 0:
-                for sym in symbols:
-                    change = float(delta[sym])
-                    if abs(change) > 1e-12:
-                        trade_log.append(
+            if turnover > 0:  # if there's turnover
+                for sym in symbols:  # loop symbols
+                    change = float(delta[sym])  # get change
+                    if abs(change) > 1e-12:  # if significant change
+                        trade_log.append(  # log trade
                             {
                                 "timestamp": ts,
                                 "symbol": sym,
@@ -466,37 +533,37 @@ class LongShortStrategy:
                             }
                         )
 
-            current_w = pending_w.copy()
+            current_w = pending_w.copy()  # update current weights
 
-            gross_ret = float((current_w * curr_returns).sum())
-            net_ret = gross_ret - tx_cost
+            gross_ret = float((current_w * curr_returns).sum())  # gross return
+            net_ret = gross_ret - tx_cost  # net return
 
-            port_ret_series.loc[ts] = net_ret
-            weights_hist.loc[ts] = current_w
-            turnover_series.loc[ts] = turnover
-            tx_cost_series.loc[ts] = tx_cost
-            gross_exp_series.loc[ts] = float(current_w.abs().sum())
+            port_ret_series.loc[ts] = net_ret  # store return
+            weights_hist.loc[ts] = current_w  # store weights
+            turnover_series.loc[ts] = turnover  # store turnover
+            tx_cost_series.loc[ts] = tx_cost  # store cost
+            gross_exp_series.loc[ts] = float(current_w.abs().sum())  # store exposure
 
-            # --- signal generation for next period ---
-            if bars_since_rebalance % self.rebalance_periods == 0:
-                # Compute dynamic sizing scales
-                signal_scale = 1.0
-                vol_scale = 1.0
+            # --- signal generation for next period ---... signal stuff .....
+            if bars_since_rebalance % self.rebalance_periods == 0:  # rebalance time
+                # compute dynamic sizing scales... scaling again
+                signal_scale = 1.0  # default scale
+                vol_scale = 1.0  # default vol scale
                 
-                if self.use_dynamic_sizing:
-                    # Compute portfolio returns so far for vol scaling
-                    port_rets_so_far = port_ret_series.loc[:ts]
-                    if len(port_rets_so_far) > 20:
-                        vol_scale = self._compute_vol_scale(port_rets_so_far, self.target_volatility)
+                if self.use_dynamic_sizing:  # if dynamic sizing
+                    # compute portfolio returns so far for vol scaling... vol stuff
+                    port_rets_so_far = port_ret_series.loc[:ts]  # returns so far
+                    if len(port_rets_so_far) > 20:  # enuf data
+                        vol_scale = self._compute_vol_scale(port_rets_so_far, self.target_volatility)  # calc vol scale
                 
-                # Apply universe filter if enabled
-                tradeable_symbols = symbols
-                if self.use_universe_filter:
-                    i = time_index.get_loc(ts)
-                    if i >= 240:  # Need enough history for filtering
-                        price_history = price_matrix.iloc[:i+1]
-                        vol_history = volumes.iloc[:i+1] if volumes is not None else None
-                        tradeable_symbols = filter_universe(
+                # apply universe filter if enabled... filtering stuff
+                tradeable_symbols = symbols  # default all symbols
+                if self.use_universe_filter:  # if filtering enabled
+                    i = time_index.get_loc(ts)  # get index
+                    if i >= 240:  # need enuf history for filtering... history check
+                        price_history = price_matrix.iloc[:i+1]  # price history
+                        vol_history = volumes.iloc[:i+1] if volumes is not None else None  # vol history
+                        tradeable_symbols = filter_universe(  # filter universe
                             price_history,
                             vol_history,
                             self.min_liquidity_pct,
@@ -504,7 +571,7 @@ class LongShortStrategy:
                             lookback=240,
                         )
                 
-                # build scores for this timestamp
+                # build scores for this timestamp... score building .....
                 if self.signal_type == "predictions":
                     if predictions is None:
                         raise ValueError("predictions must be provided for signal_type='predictions'")
@@ -514,7 +581,7 @@ class LongShortStrategy:
                         continue
                     scores = predictions.loc[ts]
                     
-                    # Apply universe filter to scores
+                    # apply universe filter to scores
                     if self.use_universe_filter and tradeable_symbols != symbols:
                         scores = scores[scores.index.isin(tradeable_symbols)]
                     
@@ -532,12 +599,12 @@ class LongShortStrategy:
                     if curr_idx >= lookback:
                         curr_prices = price_matrix.loc[ts]
                         past_prices = price_matrix.iloc[curr_idx - lookback]
-                        # Calculate past returns and NEGATE for reversal (losers get high scores)
+                        # calculate past returns and NEGATE for reversal (losers get high scores)
                         past_returns = (curr_prices / past_prices - 1.0)
-                        scores = -past_returns  # Negative: losers become winners
+                        scores = -past_returns  # negative: losers become winners
                         scores = scores.dropna()
                         
-                        # Apply universe filter to scores
+                        # apply universe filter to scores
                         if self.use_universe_filter and tradeable_symbols != symbols:
                             scores = scores[scores.index.isin(tradeable_symbols)]
                         
@@ -559,35 +626,35 @@ class LongShortStrategy:
                         past_prices = price_matrix.iloc[curr_idx - lookback]
                         past_returns = (curr_prices / past_prices - 1.0)
                         
-                        # Determine regime
+                        # determine regime
                         curr_vol = self._rolling_vol.iloc[curr_idx] if curr_idx < len(self._rolling_vol) else np.nan
                         long_vol = self._long_vol.iloc[curr_idx] if curr_idx < len(self._long_vol) else np.nan
                         trend = self._market_trend.iloc[curr_idx] if curr_idx < len(self._market_trend) else 0
                         
-                        # Regime classification
+                        # regime classification
                         vol_ratio = curr_vol / long_vol if pd.notna(long_vol) and long_vol > 0 else 1.0
-                        is_very_high_vol = vol_ratio > 1.5  # Extreme volatility (50% above normal)
-                        is_high_vol = vol_ratio > 1.2  # High volatility (20% above normal)
-                        is_strong_trend = abs(trend) > 0.08  # Strong market trend (>8%)
-                        is_weak_trend = abs(trend) < 0.02  # Very weak trend (<2%)
+                        is_very_high_vol = vol_ratio > 1.5  # extreme volatility (50% above normal)
+                        is_high_vol = vol_ratio > 1.2  # high volatility (20% above normal)
+                        is_strong_trend = abs(trend) > 0.08  # strong market trend (>8%)
+                        is_weak_trend = abs(trend) < 0.02  # very weak trend (<2%)
                         
-                        # Default: reversal with full size
+                        # default: reversal with full size
                         scores = -past_returns
                         leverage_scale = 1.0
                         
-                        # Regime-based adjustments
+                        # regime-based adjustments
                         if is_very_high_vol:
-                            # Extreme volatility → reduce risk significantly
+                            # extreme volatility → reduce risk significantly
                             leverage_scale = 0.3
                         elif is_high_vol and is_weak_trend:
-                            # High vol + no trend → reversal works best, full size
+                            # high vol + no trend → reversal works best, full size
                             leverage_scale = 1.0
                         elif is_strong_trend and not is_high_vol:
-                            # Strong trend + normal vol → momentum might work
-                            scores = past_returns  # Switch to momentum
-                            leverage_scale = 0.6  # But be cautious
+                            # strong trend + normal vol → momentum might work
+                            scores = past_returns  # switch to momentum
+                            leverage_scale = 0.6  # but be cautios
                         elif is_high_vol:
-                            # High vol with trend → be cautious
+                            # high vol with trend → be cautious
                             leverage_scale = 0.7
                         
                         scores = scores.dropna()
@@ -617,7 +684,7 @@ class LongShortStrategy:
                 else:
                     raise ValueError(f"Unsupported signal_type {self.signal_type}")
                 
-                # Apply partial rebalancing if enabled
+                # apply partial rebalancing if enabled
                 if self.use_partial_rebalancing:
                     pending_w = self._apply_partial_rebalancing(
                         pending_w, current_w, self.min_trade_threshold
@@ -625,7 +692,7 @@ class LongShortStrategy:
 
             bars_since_rebalance += 1
 
-        # --- 4) Post-processing ---
+        # --- 4) post-processing ---
         nav = (1.0 + port_ret_series).cumprod()
         capital_used = gross_exp_series * nav
 
@@ -686,24 +753,24 @@ def filter_universe(
     """
     symbols = list(prices.columns)
     
-    # Compute recent volatility for each stock
+    # compute recent volatility for each stock
     recent_prices = prices.iloc[-lookback:]
     volatilities = recent_prices.pct_change().std()
     
-    # Filter by volatility (exclude extreme vol stocks)
+    # filter by volatility (exclude extreme vol stocks)
     vol_threshold = volatilities.quantile(max_volatility_pct)
     vol_pass = volatilities[volatilities <= vol_threshold].index.tolist()
     
-    # Filter by liquidity if volumes provided
+    # filter by liquidity if volumes provided
     if volumes is not None:
         recent_volumes = volumes.iloc[-lookback:]
         avg_volume = recent_volumes.mean()
         
-        # Exclude bottom X% by volume
+        # exclude bottom X% by volume
         liq_threshold = avg_volume.quantile(min_liquidity_pct)
         liq_pass = avg_volume[avg_volume >= liq_threshold].index.tolist()
         
-        # Intersection of both filters
+        # intersection of both filtres
         filtered = list(set(vol_pass) & set(liq_pass))
     else:
         filtered = vol_pass
@@ -738,9 +805,9 @@ def create_reversal_predictions(prices: pd.DataFrame, lookback: int = 6) -> pd.D
         the reversal factor, or when combining reversal with other factors
         from Part 2 alpha modeling.
     """
-    # Calculate past returns
+    # calculate past returns
     past_returns = prices.pct_change(lookback)
-    # Negate for reversal: losers get high scores (long), winners get low scores (short)
+    # negate for reversal: losers get high scores (long), winners get low scores (short)
     reversal_scores = -past_returns
     return reversal_scores
 
@@ -783,38 +850,38 @@ def create_multi_factor_predictions(
     n_samples = len(time_index)
     train_end = int(n_samples * train_ratio)
     
-    # Build factor matrix for each stock
+    # build factor matrix for each stock
     print("Building multi-factor dataset...")
     
-    # Factor definitions (all should have negative IC for reversal-based alpha)
+    # factor definitions (all should have negative IC for reversal-based alpha)
     factor_funcs = {
         'reversal_6': lambda p, v: -p.pct_change(6),
         'reversal_12': lambda p, v: -p.pct_change(12),
         'reversal_24': lambda p, v: -p.pct_change(24),
         'ma_dev_24': lambda p, v: -(p - p.rolling(24).mean()) / p.rolling(24).std(),
         'ma_dev_48': lambda p, v: -(p - p.rolling(48).mean()) / p.rolling(48).std(),
-        'volatility': lambda p, v: -p.pct_change().rolling(24).std(),  # Low vol = good
+        'volatility': lambda p, v: -p.pct_change().rolling(24).std(),  # low vol = good
     }
     
     if volumes is not None:
-        factor_funcs['vol_change'] = lambda p, v: -(v / v.rolling(24).mean() - 1)  # Low vol = good
+        factor_funcs['vol_change'] = lambda p, v: -(v / v.rolling(24).mean() - 1)  # low vol = good
     
-    # Compute forward returns (labels)
+    # compute forward returns (labels)
     forward_returns = prices.pct_change(forward_periods).shift(-forward_periods)
     
-    # Build prediction matrix
+    # build prediction matrix
     predictions = pd.DataFrame(np.nan, index=time_index, columns=symbols)
     
-    # Process in chunks (expanding window)
-    chunk_size = 4800  # Refit model every ~100 days
+    # process in chunks (expanding window)
+    chunk_size = 4800  # refit model every ~100 days
     
     for start_idx in range(train_end, n_samples, chunk_size):
         end_idx = min(start_idx + chunk_size, n_samples)
         
-        # Training data: all data before start_idx
+        # training data: all data before start_idx
         train_slice = slice(0, start_idx)
         
-        # Collect training data for all stocks
+        # collect training data for all stocks
         X_train_all = []
         y_train_all = []
         
@@ -822,17 +889,17 @@ def create_multi_factor_predictions(
             price_series = prices[sym]
             vol_series = volumes[sym] if volumes is not None else None
             
-            # Compute factors
+            # compute factors
             factors = {}
             for fname, ffunc in factor_funcs.items():
                 factors[fname] = ffunc(price_series, vol_series)
             
             factor_df = pd.DataFrame(factors)
             
-            # Get training labels
+            # get training labels
             y = forward_returns[sym]
             
-            # Align and clean
+            # align and clean
             valid_mask = factor_df.notna().all(axis=1) & y.notna()
             valid_mask = valid_mask.iloc[train_slice]
             
@@ -845,15 +912,15 @@ def create_multi_factor_predictions(
         if not X_train_all:
             continue
         
-        # Combine all stocks
+        # combine all stocks
         X_train = pd.concat(X_train_all, axis=0)
         y_train = pd.concat(y_train_all, axis=0)
         
-        # Standardize features
+        # standardize features
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train.fillna(0))
         
-        # Train model
+        # train model
         if model_type == 'linear':
             model = Ridge(alpha=1.0)
         else:
@@ -865,7 +932,7 @@ def create_multi_factor_predictions(
         
         model.fit(X_train_scaled, y_train.fillna(0))
         
-        # Generate predictions for this chunk
+        # generate predictions for this chunck
         for t_idx in range(start_idx, end_idx):
             ts = time_index[t_idx]
             pred_row = {}
@@ -874,7 +941,7 @@ def create_multi_factor_predictions(
                 price_series = prices[sym]
                 vol_series = volumes[sym] if volumes is not None else None
                 
-                # Compute factors at this timestamp
+                # compute factors at this timestamp
                 factors = {}
                 for fname, ffunc in factor_funcs.items():
                     factor_series = ffunc(price_series, vol_series)
@@ -914,16 +981,16 @@ if __name__ == "__main__":
     loader = DataLoader()
     data_5m = loader.load_5min_data()
     prices_wide = _extract_close_prices(data_5m)
-    # Subset for quick demo: first 5000 rows and first 20 symbols
+    # subset for quick demo: first 5000 rows and first 20 symbols
     if len(prices_wide) > 5000:
         prices_wide = prices_wide.iloc[:5000]
     if prices_wide.shape[1] > 20:
         prices_wide = prices_wide.iloc[:, :20]
     rets = _pct_change_returns(prices_wide)
 
-    # Example 1: Reversal signal-based strategy (exploits short-term mean reversion)
-    # OPTIMIZED CONFIG: Very infrequent rebalancing to minimize transaction costs
-    # Achieves +12% return on full 5-year dataset with only 1.2% transaction costs
+    # example 1: reversal signal-based strategy (exploits short-term mean reversion)
+    # OPTIMIZED CONFIG: very infrequent rebalancing to minimize transaction costs
+    # achieves +12% return on full 5-year dataset with only 1.2% transaction costs
     strat_reversal = LongShortStrategy(
         long_quantile=0.1,
         short_quantile=0.1,
@@ -944,7 +1011,7 @@ if __name__ == "__main__":
     print(f"Max Gross Exposure: {float(res_reversal['gross_exposure'].max()):.4f}")
     print(f"Number of Trades: {len(res_reversal['trade_log'])}")
     
-    # Show some performance metrics
+    # show some performance metrics
     from src.part3_strategy.task8_performance import calculate_performance_metrics
     try:
         from part3_strategy.task8_performance import calculate_performance_metrics
@@ -958,7 +1025,7 @@ if __name__ == "__main__":
             print(f"Annualized Return: {metrics.get('annualized_return', 0) * 100:.2f}%")
             print(f"Annualized Volatility: {metrics.get('annualized_volatility', 0) * 100:.2f}%")
 
-    # Example 2: If you had model scores (here we just reuse prices to create dummy scores)
+    # example 2: if you had model scores (here we just reuse prices to create dummy scores)
     dummy_scores = prices_wide.rank(axis=1, method="first")
     strat_pred = LongShortStrategy(
         long_quantile=0.2,
